@@ -1,0 +1,623 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vedic Astrology Calculator</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 15px;
+            padding: 30px;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+        }
+        
+        h1 {
+            text-align: center;
+            color: #333;
+            margin-bottom: 30px;
+            font-size: 2.5em;
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        
+        .form-section {
+            background: #f8f9fa;
+            padding: 25px;
+            border-radius: 10px;
+            margin-bottom: 25px;
+            border: 1px solid #e9ecef;
+        }
+        
+        .form-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+        
+        .form-group {
+            display: flex;
+            flex-direction: column;
+        }
+        
+        label {
+            font-weight: 600;
+            margin-bottom: 5px;
+            color: #333;
+        }
+        
+        input, select {
+            padding: 12px;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            font-size: 16px;
+            transition: border-color 0.3s ease;
+        }
+        
+        input:focus, select:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+        
+        .button-group {
+            display: flex;
+            gap: 15px;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+        
+        button {
+            padding: 12px 30px;
+            border: none;
+            border-radius: 25px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white;
+        }
+        
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+        
+        .btn-secondary {
+            background: #6c757d;
+            color: white;
+        }
+        
+        .btn-secondary:hover {
+            background: #5a6268;
+            transform: translateY(-2px);
+        }
+        
+        .btn-copy {
+            background: #28a745;
+            color: white;
+            font-size: 14px;
+            padding: 8px 16px;
+        }
+        
+        .btn-copy:hover {
+            background: #218838;
+        }
+        
+        .results-section {
+            display: none;
+            background: #fff;
+            padding: 25px;
+            border-radius: 10px;
+            border: 1px solid #e9ecef;
+            margin-top: 25px;
+        }
+        
+        .results-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+        }
+        
+        .result-card {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 8px;
+            border-left: 4px solid #667eea;
+        }
+        
+        .result-title {
+            font-size: 18px;
+            font-weight: bold;
+            color: #333;
+            margin-bottom: 15px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .planet-list {
+            list-style: none;
+        }
+        
+        .planet-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid #e9ecef;
+        }
+        
+        .planet-item:last-child {
+            border-bottom: none;
+        }
+        
+        .planet-name {
+            font-weight: 600;
+            color: #495057;
+        }
+        
+        .planet-degree {
+            color: #667eea;
+            font-family: 'Courier New', monospace;
+        }
+        
+        .api-info {
+            background: #e3f2fd;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 15px 0;
+            border-left: 4px solid #2196f3;
+        }
+        
+        .api-url {
+            background: #f5f5f5;
+            padding: 10px;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            word-break: break-all;
+            margin: 10px 0;
+            border: 1px solid #ddd;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 20px;
+            font-size: 18px;
+            color: #667eea;
+        }
+        
+        .error {
+            background: #f8d7da;
+            color: #721c24;
+            padding: 15px;
+            border-radius: 8px;
+            border-left: 4px solid #dc3545;
+            margin: 15px 0;
+        }
+        
+        .success {
+            background: #d4edda;
+            color: #155724;
+            padding: 10px;
+            border-radius: 4px;
+            margin: 10px 0;
+        }
+        
+        .admin-link {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: rgba(0, 0, 0, 0.7);
+            color: white;
+            padding: 10px 15px;
+            border-radius: 20px;
+            text-decoration: none;
+            font-size: 14px;
+        }
+        
+        .admin-link:hover {
+            background: rgba(0, 0, 0, 0.9);
+        }
+        
+        @media (max-width: 768px) {
+            .container {
+                padding: 20px;
+            }
+            
+            h1 {
+                font-size: 2em;
+            }
+            
+            .form-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .button-group {
+                flex-direction: column;
+            }
+            
+            .results-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <a href="/admin" class="admin-link">Admin Panel</a>
+    
+    <div class="container">
+        <h1>🕉️ Vedic Astrology Calculator</h1>
+        
+        <div class="form-section">
+            <form id="astrologyForm">
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label for="year">Year:</label>
+                        <input type="number" id="year" name="year" min="1900" max="2100" value="2024" required>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="month">Month:</label>
+                        <select id="month" name="month" required>
+                            <option value="1">January</option>
+                            <option value="2">February</option>
+                            <option value="3">March</option>
+                            <option value="4">April</option>
+                            <option value="5">May</option>
+                            <option value="6">June</option>
+                            <option value="7">July</option>
+                            <option value="8">August</option>
+                            <option value="9">September</option>
+                            <option value="10">October</option>
+                            <option value="11">November</option>
+                            <option value="12">December</option>
+                        </select>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="day">Day:</label>
+                        <input type="number" id="day" name="day" min="1" max="31" value="15" required>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="hour">Hour (24-format):</label>
+                        <input type="number" id="hour" name="hour" min="0" max="23" value="12" required>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="minute">Minute:</label>
+                        <input type="number" id="minute" name="minute" min="0" max="59" value="0" required>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="second">Second:</label>
+                        <input type="number" id="second" name="second" min="0" max="59" value="0" required>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="lat">Latitude (degrees):</label>
+                        <input type="number" id="lat" name="lat" step="0.000001" value="28.6139" required>
+                        <small>Positive for North, Negative for South</small>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="lon">Longitude (degrees):</label>
+                        <input type="number" id="lon" name="lon" step="0.000001" value="77.2090" required>
+                        <small>Positive for East, Negative for West</small>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="timezone">Timezone:</label>
+                        <select id="timezone" name="timezone">
+                            <option value="UTC">UTC</option>
+                            <option value="Asia/Kolkata">Asia/Kolkata (IST)</option>
+                            <option value="America/New_York">America/New_York (EST/EDT)</option>
+                            <option value="America/Los_Angeles">America/Los_Angeles (PST/PDT)</option>
+                            <option value="Europe/London">Europe/London (GMT/BST)</option>
+                            <option value="Asia/Tokyo">Asia/Tokyo (JST)</option>
+                            <option value="Australia/Sydney">Australia/Sydney (AEST/AEDT)</option>
+                        </select>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="ayanamsha">Ayanamsha:</label>
+                        <select id="ayanamsha" name="ayanamsha">
+                            <option value="lahiri">N.C. Lahiri</option>
+                            <option value="raman">B.V. Raman</option>
+                            <option value="krishnamurti">Krishnamurti</option>
+                            <option value="yukteshwar">Yukteshwar</option>
+                            <option value="jn_bhasin">J.N. Bhasin</option>
+                            <option value="true_citra">True Citra</option>
+                            <option value="true_revati">True Revati</option>
+                            <option value="true_pushya">True Pushya</option>
+                        </select>
+                    </div>
+                </div>
+                
+                <div class="button-group">
+                    <button type="submit" class="btn-primary">Calculate Chart</button>
+                    <button type="button" onclick="clearForm()" class="btn-secondary">Clear Form</button>
+                </div>
+            </form>
+        </div>
+        
+        <div id="loading" class="loading" style="display: none;">
+            Calculating your Vedic chart... Please wait...
+        </div>
+        
+        <div id="error" class="error" style="display: none;"></div>
+        
+        <div id="results" class="results-section">
+            <div class="api-info">
+                <h3>API Information</h3>
+                <div>API Endpoint URL:</div>
+                <div id="apiUrl" class="api-url"></div>
+                <button onclick="openApiResponse()" class="btn-secondary">Open API Response in New Window</button>
+            </div>
+            
+            <div class="results-grid">
+                <div class="result-card">
+                    <div class="result-title">
+                        Chart Information
+                        <button onclick="copyChartInfo()" class="btn-copy">Copy Info</button>
+                    </div>
+                    <div id="chartInfo"></div>
+                </div>
+                
+                <div class="result-card">
+                    <div class="result-title">
+                        Ascendant
+                        <button onclick="copyAscendant()" class="btn-copy">Copy</button>
+                    </div>
+                    <div id="ascendantInfo"></div>
+                </div>
+                
+                <div class="result-card">
+                    <div class="result-title">
+                        Planetary Longitudes
+                        <button onclick="copyAllLongitudes()" class="btn-copy">Copy All Longitudes</button>
+                    </div>
+                    <ul id="planetList" class="planet-list"></ul>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentApiUrl = '';
+        let currentResults = null;
+
+        document.getElementById('astrologyForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const formData = new FormData(e.target);
+            const data = Object.fromEntries(formData.entries());
+            
+            // Convert hour to decimal UT
+            const hour = parseInt(data.hour);
+            const minute = parseInt(data.minute);
+            const second = parseInt(data.second);
+            const decimalHour = hour + minute/60 + second/3600;
+            
+            const requestData = {
+                year: parseInt(data.year),
+                month: parseInt(data.month),
+                day: parseInt(data.day),
+                hour: decimalHour,
+                lat: parseFloat(data.lat),
+                lon: parseFloat(data.lon),
+                tz: data.timezone,
+                ayanamsha: data.ayanamsha
+            };
+            
+            // Show loading
+            document.getElementById('loading').style.display = 'block';
+            document.getElementById('results').style.display = 'none';
+            document.getElementById('error').style.display = 'none';
+            
+            try {
+                // Try POST first
+                let response = await fetch('/chart', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(requestData)
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                
+                const result = await response.json();
+                currentResults = result;
+                
+                // Create GET URL for API reference
+                const params = new URLSearchParams({
+                    year: requestData.year,
+                    month: requestData.month,
+                    day: requestData.day,
+                    hour: requestData.hour,
+                    lat: requestData.lat,
+                    lon: requestData.lon,
+                    tz: requestData.tz,
+                    ayanamsha: requestData.ayanamsha
+                });
+                currentApiUrl = `${window.location.origin}/chart?${params.toString()}`;
+                
+                displayResults(result);
+                
+            } catch (error) {
+                console.error('Error:', error);
+                document.getElementById('error').innerHTML = `Error calculating chart: ${error.message}`;
+                document.getElementById('error').style.display = 'block';
+            } finally {
+                document.getElementById('loading').style.display = 'none';
+            }
+        });
+
+        function displayResults(data) {
+            // API URL
+            document.getElementById('apiUrl').textContent = currentApiUrl;
+            
+            // Chart Information
+            const chartInfo = `
+                <p><strong>Julian Day (UT):</strong> ${data.julian_day_ut}</p>
+                <p><strong>Ayanamsha:</strong> ${data.ayanamsha_name || 'N.C. Lahiri'}</p>
+                <p><strong>Ayanamsha Value:</strong> ${data.ayanamsha_value_dms || 'N/A'} (${data.ayanamsha_value_decimal || 'N/A'}°)</p>
+                <p><strong>Timezone:</strong> ${data.timezone_used || 'UTC'}</p>
+                <p><strong>Input Time (UT):</strong> ${data.input_time_ut || data.hour || 'N/A'}</p>
+            `;
+            document.getElementById('chartInfo').innerHTML = chartInfo;
+            
+            // Ascendant
+            const ascendantInfo = `
+                <p><strong>Ascendant:</strong> ${data.ascendant_deg}°</p>
+                <p><strong>Full Precision:</strong> ${data.ascendant_full_precision || data.ascendant_deg}°</p>
+            `;
+            document.getElementById('ascendantInfo').innerHTML = ascendantInfo;
+            
+            // Planets
+            const planetList = document.getElementById('planetList');
+            planetList.innerHTML = '';
+            
+            const planets = data.planets_deg || {};
+            const planetsFullPrecision = data.planets_full_precision || planets;
+            
+            for (const [planet, longitude] of Object.entries(planets)) {
+                const li = document.createElement('li');
+                li.className = 'planet-item';
+                
+                const fullPrecision = planetsFullPrecision[planet] || longitude;
+                
+                li.innerHTML = `
+                    <span class="planet-name">${planet}</span>
+                    <span class="planet-degree" title="Full precision: ${fullPrecision}°">${longitude}°</span>
+                `;
+                planetList.appendChild(li);
+            }
+            
+            document.getElementById('results').style.display = 'block';
+        }
+
+        function openApiResponse() {
+            if (currentApiUrl) {
+                window.open(currentApiUrl, '_blank');
+            }
+        }
+
+        function copyToClipboard(text) {
+            navigator.clipboard.writeText(text).then(() => {
+                showSuccessMessage('Copied to clipboard!');
+            }).catch(err => {
+                console.error('Failed to copy: ', err);
+                // Fallback for older browsers
+                const textArea = document.createElement('textarea');
+                textArea.value = text;
+                document.body.appendChild(textArea);
+                textArea.select();
+                document.execCommand('copy');
+                document.body.removeChild(textArea);
+                showSuccessMessage('Copied to clipboard!');
+            });
+        }
+
+        function copyChartInfo() {
+            if (!currentResults) return;
+            
+            const info = `
+Vedic Astrology Chart Information:
+Julian Day (UT): ${currentResults.julian_day_ut}
+Ayanamsha: ${currentResults.ayanamsha_name || 'N.C. Lahiri'}
+Ayanamsha Value: ${currentResults.ayanamsha_value_dms || 'N/A'} (${currentResults.ayanamsha_value_decimal || 'N/A'}°)
+Timezone: ${currentResults.timezone_used || 'UTC'}
+Input Time (UT): ${currentResults.input_time_ut || currentResults.hour || 'N/A'}
+            `.trim();
+            
+            copyToClipboard(info);
+        }
+
+        function copyAscendant() {
+            if (!currentResults) return;
+            
+            const ascendant = `Ascendant: ${currentResults.ascendant_full_precision || currentResults.ascendant_deg}°`;
+            copyToClipboard(ascendant);
+        }
+
+        function copyAllLongitudes() {
+            if (!currentResults) return;
+            
+            const planets = currentResults.planets_full_precision || currentResults.planets_deg || {};
+            const longitudes = Object.entries(planets)
+                .map(([planet, longitude]) => `${planet}: ${longitude}°`)
+                .join('\n');
+            
+            const ascendant = `Ascendant: ${currentResults.ascendant_full_precision || currentResults.ascendant_deg}°`;
+            const allData = `${ascendant}\n\nPlanetary Longitudes:\n${longitudes}`;
+            
+            copyToClipboard(allData);
+        }
+
+        function showSuccessMessage(message) {
+            const existingMsg = document.querySelector('.success');
+            if (existingMsg) existingMsg.remove();
+            
+            const successDiv = document.createElement('div');
+            successDiv.className = 'success';
+            successDiv.textContent = message;
+            
+            document.querySelector('.container').insertBefore(successDiv, document.getElementById('results'));
+            
+            setTimeout(() => {
+                successDiv.remove();
+            }, 3000);
+        }
+
+        function clearForm() {
+            document.getElementById('astrologyForm').reset();
+            document.getElementById('results').style.display = 'none';
+            document.getElementById('error').style.display = 'none';
+            
+            // Reset to default values
+            document.getElementById('year').value = '2024';
+            document.getElementById('month').value = '1';
+            document.getElementById('day').value = '15';
+            document.getElementById('hour').value = '12';
+            document.getElementById('minute').value = '0';
+            document.getElementById('second').value = '0';
+            document.getElementById('lat').value = '28.6139';
+            document.getElementById('lon').value = '77.2090';
+        }
+
+        // Set current date as default
+        const now = new Date();
+        document.getElementById('year').value = now.getFullYear();
+        document.getElementById('month').value = now.getMonth() + 1;
+        document.getElementById('day').value = now.getDate();
+    </script>
+</body>
+</html>
