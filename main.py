@@ -134,7 +134,12 @@ if not ADMIN_PASSWORD_HASH:
 SESSION_TIMEOUT = int(os.getenv('SESSION_TIMEOUT', '3600'))
 
 # More restrictive default domains - only localhost by default
-default_domains = os.getenv('AUTHORIZED_DOMAINS', 'localhost,127.0.0.1')
+# Include Replit preview domain for testing
+replit_domain = os.getenv('REPLIT_DEV_DOMAIN', '')
+default_domains_list = ['localhost', '127.0.0.1']
+if replit_domain:
+    default_domains_list.append(replit_domain)
+default_domains = os.getenv('AUTHORIZED_DOMAINS', ','.join(default_domains_list))
 AUTHORIZED_DOMAINS = set(domain.strip() for domain in default_domains.split(',') if domain.strip())
 API_KEYS = {}
 ACTIVE_SESSIONS = {}  # Now stores {token: {username: str, created_at: datetime}}
