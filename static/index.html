@@ -282,6 +282,46 @@
                 grid-template-columns: repeat(2, 1fr);
             }
         }
+        
+        .horizontal-details {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 15px;
+            padding: 10px;
+        }
+        
+        .detail-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            text-align: center;
+            padding: 8px;
+            background: rgba(102, 126, 234, 0.1);
+            border-radius: 6px;
+            border: 1px solid rgba(102, 126, 234, 0.2);
+        }
+        
+        .detail-label {
+            font-weight: bold;
+            font-size: 12px;
+            color: #666;
+            margin-bottom: 4px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
+        .detail-value {
+            font-size: 14px;
+            color: #333;
+            word-wrap: break-word;
+        }
+        
+        @media (max-width: 768px) {
+            .horizontal-details {
+                grid-template-columns: repeat(2, 1fr);
+                gap: 10px;
+            }
+        }
     </style>
 </head>
 <body>
@@ -549,25 +589,65 @@
             // API URL
             document.getElementById('apiUrl').textContent = currentApiUrl;
             
-            // Natal Other Details
+            // Natal Other Details - Horizontal Layout
             const natalOtherDetailsHtml = `
-                <p><strong>Date:</strong> ${data.other_details.natal_date_formatted}</p>
-                <p><strong>Ayanamsha:</strong> ${data.other_details.ayanamsha_name}</p>
-                <p><strong>Ayanamsha Value:</strong> ${data.other_details.ayanamsha_value_natal}°</p>
-                <p><strong>House System:</strong> ${data.other_details.house_system_used}</p>
-                <p><strong>Timezone:</strong> ${data.other_details.timezone_used}</p>
-                <p><strong>Time (UT):</strong> ${data.other_details.natal_input_time_ut}</p>
+                <div class="horizontal-details">
+                    <div class="detail-item">
+                        <div class="detail-label">Date</div>
+                        <div class="detail-value">${data.other_details.natal_date_formatted}</div>
+                    </div>
+                    <div class="detail-item">
+                        <div class="detail-label">Ayanamsha</div>
+                        <div class="detail-value">${data.other_details.ayanamsha_name}</div>
+                    </div>
+                    <div class="detail-item">
+                        <div class="detail-label">Ayanamsha Value</div>
+                        <div class="detail-value">${data.other_details.ayanamsha_value_natal}°</div>
+                    </div>
+                    <div class="detail-item">
+                        <div class="detail-label">House System</div>
+                        <div class="detail-value">${data.other_details.house_system_used}</div>
+                    </div>
+                    <div class="detail-item">
+                        <div class="detail-label">Timezone</div>
+                        <div class="detail-value">${data.other_details.timezone_used}</div>
+                    </div>
+                    <div class="detail-item">
+                        <div class="detail-label">Time (UT)</div>
+                        <div class="detail-value">${data.other_details.natal_input_time_ut}</div>
+                    </div>
+                </div>
             `;
             document.getElementById('natalOtherDetails').innerHTML = natalOtherDetailsHtml;
             
-            // Transit Other Details
+            // Transit Other Details - Horizontal Layout
             const transitOtherDetailsHtml = `
-                <p><strong>Date:</strong> ${data.other_details.transit_date_formatted}</p>
-                <p><strong>Ayanamsha:</strong> ${data.other_details.ayanamsha_name}</p>
-                <p><strong>Ayanamsha Value:</strong> ${data.other_details.ayanamsha_value_transit}°</p>
-                <p><strong>House System:</strong> ${data.other_details.house_system_used}</p>
-                <p><strong>Timezone:</strong> ${data.other_details.timezone_used}</p>
-                <p><strong>Time (UT):</strong> ${data.other_details.transit_input_time_ut}</p>
+                <div class="horizontal-details">
+                    <div class="detail-item">
+                        <div class="detail-label">Date</div>
+                        <div class="detail-value">${data.other_details.transit_date_formatted}</div>
+                    </div>
+                    <div class="detail-item">
+                        <div class="detail-label">Ayanamsha</div>
+                        <div class="detail-value">${data.other_details.ayanamsha_name}</div>
+                    </div>
+                    <div class="detail-item">
+                        <div class="detail-label">Ayanamsha Value</div>
+                        <div class="detail-value">${data.other_details.ayanamsha_value_transit}°</div>
+                    </div>
+                    <div class="detail-item">
+                        <div class="detail-label">House System</div>
+                        <div class="detail-value">${data.other_details.house_system_used}</div>
+                    </div>
+                    <div class="detail-item">
+                        <div class="detail-label">Timezone</div>
+                        <div class="detail-value">${data.other_details.timezone_used}</div>
+                    </div>
+                    <div class="detail-item">
+                        <div class="detail-label">Time (UT)</div>
+                        <div class="detail-value">${data.other_details.transit_input_time_ut}</div>
+                    </div>
+                </div>
             `;
             document.getElementById('transitOtherDetails').innerHTML = transitOtherDetailsHtml;
             
@@ -641,12 +721,7 @@
             
             const info = `
 Natal Other Details:
-Date: ${currentResults.other_details.natal_date_formatted}
-Ayanamsha: ${currentResults.other_details.ayanamsha_name}
-Ayanamsha Value: ${currentResults.other_details.ayanamsha_value_natal}°
-House System: ${currentResults.other_details.house_system_used}
-Timezone: ${currentResults.other_details.timezone_used}
-Time (UT): ${currentResults.other_details.natal_input_time_ut}
+Date: ${currentResults.other_details.natal_date_formatted} | Ayanamsha: ${currentResults.other_details.ayanamsha_name} | Ayanamsha Value: ${currentResults.other_details.ayanamsha_value_natal}° | House System: ${currentResults.other_details.house_system_used} | Timezone: ${currentResults.other_details.timezone_used} | Time (UT): ${currentResults.other_details.natal_input_time_ut}
             `.trim();
             
             copyToClipboard(info);
@@ -657,12 +732,7 @@ Time (UT): ${currentResults.other_details.natal_input_time_ut}
             
             const info = `
 Transit Other Details:
-Date: ${currentResults.other_details.transit_date_formatted}
-Ayanamsha: ${currentResults.other_details.ayanamsha_name}
-Ayanamsha Value: ${currentResults.other_details.ayanamsha_value_transit}°
-House System: ${currentResults.other_details.house_system_used}
-Timezone: ${currentResults.other_details.timezone_used}
-Time (UT): ${currentResults.other_details.transit_input_time_ut}
+Date: ${currentResults.other_details.transit_date_formatted} | Ayanamsha: ${currentResults.other_details.ayanamsha_name} | Ayanamsha Value: ${currentResults.other_details.ayanamsha_value_transit}° | House System: ${currentResults.other_details.house_system_used} | Timezone: ${currentResults.other_details.timezone_used} | Time (UT): ${currentResults.other_details.transit_input_time_ut}
             `.trim();
             
             copyToClipboard(info);

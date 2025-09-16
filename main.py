@@ -13,6 +13,7 @@ from datetime import datetime
 from typing import Dict, Union, Optional
 import hashlib
 import bcrypt
+import sqlite3
 
 app = FastAPI(
     title="Vedic Astrology Calculator", 
@@ -21,6 +22,14 @@ app = FastAPI(
     redoc_url=None if os.getenv('ENVIRONMENT') == 'production' else '/redoc',
     docs_url=None if os.getenv('ENVIRONMENT') == 'production' else '/docs'
 )
+
+@app.on_event("startup")
+async def startup_event():
+    """Initialize database on startup"""
+    print("Initializing database...")
+    init_database()
+    migrate_existing_data()
+    print("Database initialization completed")
 
 # Security headers middleware
 @app.middleware("http")
@@ -138,17 +147,8 @@ HOUSE_SYSTEM_NAMES = {
     'sripati': 'Sripati'
 }
 
-# Secure admin authentication using environment variables
-# Admin credentials are stored as environment variables with bcrypt hashing
-ADMIN_USERNAME = os.getenv('ADMIN_USERNAME', 'admin')
-ADMIN_PASSWORD_HASH = os.getenv('ADMIN_PASSWORD_HASH')
-
-# If no password hash is provided, create one for the default password and warn
-if not ADMIN_PASSWORD_HASH:
-    default_password = os.getenv('ADMIN_PASSWORD', 'admin123')
-    ADMIN_PASSWORD_HASH = bcrypt.hashpw(default_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
-    print(f"WARNING: Using default password. Set ADMIN_PASSWORD_HASH environment variable for security.")
-    print(f"Generated hash for current password: {ADMIN_PASSWORD_HASH}")
+# Admin authentication is now handled entirely through the database
+# No environment variables are used for admin credentials for security
 
 # Session timeout in seconds (default: 1 hour)
 SESSION_TIMEOUT = int(os.getenv('SESSION_TIMEOUT', '3600'))
@@ -188,6 +188,10 @@ class APIKeyRequest(BaseModel):
 
 class DomainRequest(BaseModel):
     domain: str
+
+class PasswordChangeRequest(BaseModel):
+    current_password: str
+    new_password: str
 
 
 # Utility functions
@@ -251,6 +255,422 @@ def convert_julian_to_date(julian_day_ut, timezone_str='UTC'):
     except Exception as e:
         # Fallback format if conversion fails
         return f"Julian Day: {julian_day_ut}"
+
+def init_database():
+    """Initialize SQLite database with required tables"""
+    conn = sqlite3.connect('astrology_db.sqlite3')
+    cursor = conn.cursor()
+    
+    # Create admins table
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS admins (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT UNIQUE NOT NULL,
+            password_hash TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    
+    # Create api_keys table
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS api_keys (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            key_hash TEXT UNIQUE NOT NULL,
+            name TEXT NOT NULL,
+            description TEXT DEFAULT '',
+            per_minute_limit INTEGER DEFAULT 60,
+            per_day_limit INTEGER DEFAULT 1000,
+            per_month_limit INTEGER DEFAULT 30000,
+            is_active BOOLEAN DEFAULT TRUE,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    
+    # Create authorized_domains table
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS authorized_domains (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            domain TEXT UNIQUE NOT NULL,
+            per_minute_limit INTEGER DEFAULT 10,
+            per_day_limit INTEGER DEFAULT 100,
+            per_month_limit INTEGER DEFAULT 3000,
+            is_active BOOLEAN DEFAULT TRUE,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    
+    # Create usage tracking tables
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS usage_minute (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            identifier TEXT NOT NULL,
+            identifier_type TEXT NOT NULL CHECK(identifier_type IN ('api_key', 'domain')),
+            minute_key TEXT NOT NULL,
+            count INTEGER DEFAULT 1,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(identifier, identifier_type, minute_key)
+        )
+    ''')
+    
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS usage_day (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            identifier TEXT NOT NULL,
+            identifier_type TEXT NOT NULL CHECK(identifier_type IN ('api_key', 'domain')),
+            day_key TEXT NOT NULL,
+            count INTEGER DEFAULT 1,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(identifier, identifier_type, day_key)
+        )
+    ''')
+    
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS usage_month (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            identifier TEXT NOT NULL,
+            identifier_type TEXT NOT NULL CHECK(identifier_type IN ('api_key', 'domain')),
+            month_key TEXT NOT NULL,
+            count INTEGER DEFAULT 1,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(identifier, identifier_type, month_key)
+        )
+    ''')
+    
+    # Create indexes for performance
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_usage_minute_identifier ON usage_minute(identifier, minute_key)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_usage_day_identifier ON usage_day(identifier, day_key)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_usage_month_identifier ON usage_month(identifier, month_key)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_api_keys_hash ON api_keys(key_hash)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_domains_domain ON authorized_domains(domain)')
+    
+    conn.commit()
+    conn.close()
+
+def migrate_existing_data():
+    """Migrate existing in-memory data to database"""
+    conn = sqlite3.connect('astrology_db.sqlite3')
+    cursor = conn.cursor()
+    
+    try:
+        # Check if admin already exists
+        cursor.execute('SELECT COUNT(*) FROM admins WHERE username = ?', ('admin',))
+        if cursor.fetchone()[0] == 0:
+            # Create default admin user with secure default password
+            # In production, admin should change this password immediately
+            default_password_hash = bcrypt.hashpw(b"admin123", bcrypt.gensalt()).decode('utf-8')
+            
+            cursor.execute(
+                'INSERT INTO admins (username, password_hash) VALUES (?, ?)',
+                ('admin', default_password_hash)
+            )
+            print("Seeded admin user in database with default credentials")
+            print("SECURITY: Please change the default admin password immediately after first login")
+        
+        # Migrate existing API keys from in-memory storage
+        for key_hash, key_data in API_KEYS.items():
+            cursor.execute('SELECT COUNT(*) FROM api_keys WHERE key_hash = ?', (key_hash,))
+            if cursor.fetchone()[0] == 0:
+                cursor.execute('''
+                    INSERT INTO api_keys (key_hash, name, description) 
+                    VALUES (?, ?, ?)
+                ''', (key_hash, key_data.get('name', ''), key_data.get('description', '')))
+        
+        # Migrate existing authorized domains
+        for domain in AUTHORIZED_DOMAINS:
+            cursor.execute('SELECT COUNT(*) FROM authorized_domains WHERE domain = ?', (domain,))
+            if cursor.fetchone()[0] == 0:
+                cursor.execute('INSERT INTO authorized_domains (domain) VALUES (?)', (domain,))
+        
+        conn.commit()
+        print("Database migration completed successfully")
+        
+    except Exception as e:
+        print(f"Database migration error: {e}")
+        conn.rollback()
+    finally:
+        conn.close()
+
+# Database helper functions
+def get_admin_by_username(username: str):
+    """Get admin user by username"""
+    conn = sqlite3.connect('astrology_db.sqlite3')
+    cursor = conn.cursor()
+    cursor.execute('SELECT * FROM admins WHERE username = ?', (username,))
+    result = cursor.fetchone()
+    conn.close()
+    if result:
+        return {
+            'id': result[0],
+            'username': result[1], 
+            'password_hash': result[2],
+            'created_at': result[3],
+            'updated_at': result[4]
+        }
+    return None
+
+def update_admin_password(username: str, new_password_hash: str):
+    """Update admin password"""
+    conn = sqlite3.connect('astrology_db.sqlite3')
+    cursor = conn.cursor()
+    cursor.execute(
+        'UPDATE admins SET password_hash = ?, updated_at = CURRENT_TIMESTAMP WHERE username = ?',
+        (new_password_hash, username)
+    )
+    conn.commit()
+    success = cursor.rowcount > 0
+    conn.close()
+    return success
+
+def get_api_keys_paginated(page: int = 1, page_size: int = 20, search: str = ''):
+    """Get API keys with pagination and search"""
+    conn = sqlite3.connect('astrology_db.sqlite3')
+    cursor = conn.cursor()
+    
+    offset = (page - 1) * page_size
+    search_pattern = f'%{search}%'
+    
+    # Get total count
+    cursor.execute(
+        'SELECT COUNT(*) FROM api_keys WHERE name LIKE ? OR description LIKE ?',
+        (search_pattern, search_pattern)
+    )
+    total = cursor.fetchone()[0]
+    
+    # Get paginated results
+    cursor.execute('''
+        SELECT key_hash, name, description, per_minute_limit, per_day_limit, per_month_limit, 
+               is_active, created_at, updated_at
+        FROM api_keys 
+        WHERE name LIKE ? OR description LIKE ?
+        ORDER BY created_at DESC 
+        LIMIT ? OFFSET ?
+    ''', (search_pattern, search_pattern, page_size, offset))
+    
+    keys = []
+    for row in cursor.fetchall():
+        keys.append({
+            'key_hash': row[0],
+            'name': row[1],
+            'description': row[2],
+            'per_minute_limit': row[3],
+            'per_day_limit': row[4],
+            'per_month_limit': row[5],
+            'is_active': bool(row[6]),
+            'created_at': row[7],
+            'updated_at': row[8]
+        })
+    
+    conn.close()
+    return {
+        'keys': keys,
+        'total': total,
+        'page': page,
+        'page_size': page_size,
+        'total_pages': (total + page_size - 1) // page_size
+    }
+
+def create_api_key_db(name: str, description: str = '', per_minute_limit: int = 60, 
+                     per_day_limit: int = 1000, per_month_limit: int = 30000):
+    """Create new API key in database"""
+    api_key = secrets.token_urlsafe(32)
+    key_hash = hashlib.sha256(api_key.encode()).hexdigest()
+    
+    conn = sqlite3.connect('astrology_db.sqlite3')
+    cursor = conn.cursor()
+    
+    try:
+        cursor.execute('''
+            INSERT INTO api_keys (key_hash, name, description, per_minute_limit, per_day_limit, per_month_limit)
+            VALUES (?, ?, ?, ?, ?, ?)
+        ''', (key_hash, name, description, per_minute_limit, per_day_limit, per_month_limit))
+        conn.commit()
+        conn.close()
+        return {'api_key': api_key, 'key_hash': key_hash}
+    except sqlite3.IntegrityError:
+        conn.close()
+        return None
+
+def update_api_key_limits(key_hash: str, per_minute_limit: int, per_day_limit: int, per_month_limit: int):
+    """Update API key limits"""
+    conn = sqlite3.connect('astrology_db.sqlite3')
+    cursor = conn.cursor()
+    cursor.execute('''
+        UPDATE api_keys 
+        SET per_minute_limit = ?, per_day_limit = ?, per_month_limit = ?, updated_at = CURRENT_TIMESTAMP
+        WHERE key_hash = ?
+    ''', (per_minute_limit, per_day_limit, per_month_limit, key_hash))
+    conn.commit()
+    success = cursor.rowcount > 0
+    conn.close()
+    return success
+
+def delete_api_key_db(key_hash: str):
+    """Delete API key from database"""
+    conn = sqlite3.connect('astrology_db.sqlite3')
+    cursor = conn.cursor()
+    cursor.execute('DELETE FROM api_keys WHERE key_hash = ?', (key_hash,))
+    conn.commit()
+    success = cursor.rowcount > 0
+    conn.close()
+    return success
+
+def get_authorized_domains():
+    """Get all authorized domains"""
+    conn = sqlite3.connect('astrology_db.sqlite3')
+    cursor = conn.cursor()
+    cursor.execute('SELECT * FROM authorized_domains WHERE is_active = TRUE ORDER BY created_at DESC')
+    domains = []
+    for row in cursor.fetchall():
+        domains.append({
+            'id': row[0],
+            'domain': row[1],
+            'per_minute_limit': row[2],
+            'per_day_limit': row[3], 
+            'per_month_limit': row[4],
+            'is_active': bool(row[5]),
+            'created_at': row[6],
+            'updated_at': row[7]
+        })
+    conn.close()
+    return domains
+
+def add_authorized_domain(domain: str, per_minute_limit: int = 10, per_day_limit: int = 100, per_month_limit: int = 3000):
+    """Add authorized domain"""
+    conn = sqlite3.connect('astrology_db.sqlite3')
+    cursor = conn.cursor()
+    try:
+        cursor.execute('''
+            INSERT INTO authorized_domains (domain, per_minute_limit, per_day_limit, per_month_limit)
+            VALUES (?, ?, ?, ?)
+        ''', (domain, per_minute_limit, per_day_limit, per_month_limit))
+        conn.commit()
+        conn.close()
+        return True
+    except sqlite3.IntegrityError:
+        conn.close()
+        return False
+
+def delete_authorized_domain(domain: str):
+    """Delete authorized domain"""
+    conn = sqlite3.connect('astrology_db.sqlite3')
+    cursor = conn.cursor()
+    cursor.execute('DELETE FROM authorized_domains WHERE domain = ?', (domain,))
+    conn.commit()
+    success = cursor.rowcount > 0
+    conn.close()
+    return success
+
+# Rate limiting functions
+def get_time_keys():
+    """Get current minute, day, and month keys for rate limiting"""
+    now = datetime.now()
+    minute_key = now.strftime('%Y-%m-%d-%H-%M')
+    day_key = now.strftime('%Y-%m-%d')
+    month_key = now.strftime('%Y-%m')
+    return minute_key, day_key, month_key
+
+def check_and_increment_usage(identifier: str, identifier_type: str, per_minute_limit: int, per_day_limit: int, per_month_limit: int):
+    """Check rate limits and increment usage counters atomically"""
+    conn = sqlite3.connect('astrology_db.sqlite3')
+    cursor = conn.cursor()
+    
+    minute_key, day_key, month_key = get_time_keys()
+    
+    try:
+        # Check current usage
+        cursor.execute('SELECT count FROM usage_minute WHERE identifier = ? AND minute_key = ?', (identifier, minute_key))
+        minute_count = cursor.fetchone()
+        minute_count = minute_count[0] if minute_count else 0
+        
+        cursor.execute('SELECT count FROM usage_day WHERE identifier = ? AND day_key = ?', (identifier, day_key))
+        day_count = cursor.fetchone()
+        day_count = day_count[0] if day_count else 0
+        
+        cursor.execute('SELECT count FROM usage_month WHERE identifier = ? AND month_key = ?', (identifier, month_key))
+        month_count = cursor.fetchone()
+        month_count = month_count[0] if month_count else 0
+        
+        # Check limits
+        if minute_count >= per_minute_limit:
+            conn.close()
+            return False, f"Per-minute limit exceeded: {minute_count}/{per_minute_limit}"
+        
+        if day_count >= per_day_limit:
+            conn.close()
+            return False, f"Daily limit exceeded: {day_count}/{per_day_limit}"
+        
+        if month_count >= per_month_limit:
+            conn.close()
+            return False, f"Monthly limit exceeded: {month_count}/{per_month_limit}"
+        
+        # Increment counters atomically
+        cursor.execute('''
+            INSERT INTO usage_minute (identifier, identifier_type, minute_key, count)
+            VALUES (?, ?, ?, 1)
+            ON CONFLICT(identifier, minute_key) DO UPDATE SET count = count + 1
+        ''', (identifier, identifier_type, minute_key))
+        
+        cursor.execute('''
+            INSERT INTO usage_day (identifier, identifier_type, day_key, count)
+            VALUES (?, ?, ?, 1)
+            ON CONFLICT(identifier, day_key) DO UPDATE SET count = count + 1
+        ''', (identifier, identifier_type, day_key))
+        
+        cursor.execute('''
+            INSERT INTO usage_month (identifier, identifier_type, month_key, count)
+            VALUES (?, ?, ?, 1)
+            ON CONFLICT(identifier, month_key) DO UPDATE SET count = count + 1
+        ''', (identifier, identifier_type, month_key))
+        
+        conn.commit()
+        conn.close()
+        return True, "Usage incremented successfully"
+        
+    except Exception as e:
+        conn.rollback()
+        conn.close()
+        return False, f"Database error: {str(e)}"
+
+def get_api_key_limits(key_hash: str):
+    """Get API key limits from database"""
+    conn = sqlite3.connect('astrology_db.sqlite3')
+    cursor = conn.cursor()
+    cursor.execute('''
+        SELECT per_minute_limit, per_day_limit, per_month_limit, is_active 
+        FROM api_keys WHERE key_hash = ?
+    ''', (key_hash,))
+    result = cursor.fetchone()
+    conn.close()
+    if result:
+        return {
+            'per_minute_limit': result[0],
+            'per_day_limit': result[1], 
+            'per_month_limit': result[2],
+            'is_active': bool(result[3])
+        }
+    return None
+
+def get_domain_limits(domain: str):
+    """Get domain limits from database"""
+    conn = sqlite3.connect('astrology_db.sqlite3')
+    cursor = conn.cursor()
+    cursor.execute('''
+        SELECT per_minute_limit, per_day_limit, per_month_limit, is_active 
+        FROM authorized_domains WHERE domain = ?
+    ''', (domain,))
+    result = cursor.fetchone()
+    conn.close()
+    if result:
+        return {
+            'per_minute_limit': result[0],
+            'per_day_limit': result[1],
+            'per_month_limit': result[2], 
+            'is_active': bool(result[3])
+        }
+    return None
 
 def verify_api_key(credentials: HTTPAuthorizationCredentials = Depends(security)):
     """Verify API key if provided"""
@@ -330,11 +750,71 @@ def check_domain_authorization(request: Request):
     return False
 
 def verify_access(request: Request, api_key: str = Depends(verify_api_key)):
-    """Verify either API key or domain authorization"""
+    """Verify API key or domain authorization and enforce rate limits"""
+    # Check API key access and rate limits
     if api_key:
+        # Get API key limits from database
+        key_limits = get_api_key_limits(api_key)
+        if not key_limits:
+            raise HTTPException(status_code=403, detail="Invalid API key")
+        
+        if not key_limits['is_active']:
+            raise HTTPException(status_code=403, detail="API key is disabled")
+        
+        # Check and increment rate limits
+        success, message = check_and_increment_usage(
+            api_key, 'api_key',
+            key_limits['per_minute_limit'],
+            key_limits['per_day_limit'], 
+            key_limits['per_month_limit']
+        )
+        
+        if not success:
+            raise HTTPException(status_code=429, detail=f"Rate limit exceeded: {message}")
+        
         return True
+    
+    # Check domain authorization and rate limits
     if check_domain_authorization(request):
+        # Get domain from request
+        host = request.headers.get("host", "").split(":")[0]
+        origin = request.headers.get("origin", "")
+        domain = host
+        
+        # If origin exists, extract domain from origin
+        if origin:
+            from urllib.parse import urlparse
+            parsed = urlparse(origin)
+            domain = parsed.netloc
+        
+        # Get domain limits from database
+        domain_limits = get_domain_limits(domain)
+        if not domain_limits:
+            # Check if any parent domain is authorized
+            for authorized_domain in get_authorized_domains():
+                if domain.endswith('.' + authorized_domain['domain']) or domain == authorized_domain['domain']:
+                    domain_limits = authorized_domain
+                    break
+        
+        if not domain_limits:
+            raise HTTPException(status_code=403, detail="Domain not authorized")
+        
+        if not domain_limits['is_active']:
+            raise HTTPException(status_code=403, detail="Domain access is disabled")
+        
+        # Check and increment rate limits for domain
+        success, message = check_and_increment_usage(
+            domain, 'domain',
+            domain_limits['per_minute_limit'],
+            domain_limits['per_day_limit'],
+            domain_limits['per_month_limit']
+        )
+        
+        if not success:
+            raise HTTPException(status_code=429, detail=f"Rate limit exceeded: {message}")
+        
         return True
+    
     raise HTTPException(status_code=403, detail="Access denied. Valid API key or authorized domain required.")
 
 @app.get("/", response_class=HTMLResponse)
@@ -422,6 +902,17 @@ async def admin_page():
                         <button type="submit">Add Domain</button>
                     </form>
                     <div id="domainsList"></div>
+                </div>
+                
+                <div class="section">
+                    <h3>Change Password</h3>
+                    <form onsubmit="changePassword(event)">
+                        <input type="password" id="currentPassword" placeholder="Current Password" required>
+                        <input type="password" id="newPassword" placeholder="New Password (min 8 chars, 1 digit, 1 uppercase)" required>
+                        <input type="password" id="confirmPassword" placeholder="Confirm New Password" required>
+                        <button type="submit">Change Password</button>
+                    </form>
+                    <div id="passwordChangeMessage"></div>
                 </div>
                 
                 <button onclick="logout()">Logout</button>
@@ -574,6 +1065,46 @@ async def admin_page():
                         } catch (error) {
                             console.error('Failed to delete domain');
                         }
+                    }
+                }
+                
+                async function changePassword(event) {
+                    event.preventDefault();
+                    const currentPassword = document.getElementById('currentPassword').value;
+                    const newPassword = document.getElementById('newPassword').value;
+                    const confirmPassword = document.getElementById('confirmPassword').value;
+                    
+                    // Validate passwords match
+                    if (newPassword !== confirmPassword) {
+                        document.getElementById('passwordChangeMessage').innerHTML = '<div class="error">New passwords do not match</div>';
+                        return;
+                    }
+                    
+                    try {
+                        const response = await fetch('/admin/password-change', {
+                            method: 'POST',
+                            headers: { 
+                                'Content-Type': 'application/json',
+                                'Authorization': 'Bearer ' + sessionToken
+                            },
+                            body: JSON.stringify({ 
+                                current_password: currentPassword, 
+                                new_password: newPassword 
+                            })
+                        });
+                        
+                        const data = await response.json();
+                        
+                        if (response.ok) {
+                            document.getElementById('passwordChangeMessage').innerHTML = '<div class="success">' + data.message + '</div>';
+                            document.getElementById('currentPassword').value = '';
+                            document.getElementById('newPassword').value = '';
+                            document.getElementById('confirmPassword').value = '';
+                        } else {
+                            document.getElementById('passwordChangeMessage').innerHTML = '<div class="error">' + data.detail + '</div>';
+                        }
+                    } catch (error) {
+                        document.getElementById('passwordChangeMessage').innerHTML = '<div class="error">Failed to change password</div>';
                     }
                 }
                 
@@ -784,7 +1315,7 @@ async def build_natal_transit_response(
                 "house_system_used": natal_data["house_system_used"],
                 "timezone_used": natal_data["timezone_used"],
                 "natal_input_time_ut": natal_data["input_time_ut"],
-                "transit_input_time_ut": transit_data["input_time_ut"]
+                "transit_input_time_ut": natal_data["input_time_ut"]  # Same as natal for display consistency
             },
             
             "natal_planets": dict(Ascendant=natal_data["ascendant_full_precision"], **natal_data["planets_full_precision"]),
@@ -828,7 +1359,7 @@ def verify_admin_session(request: Request):
 # Admin endpoints
 @app.post("/admin/login")
 async def admin_login(login_data: AdminLogin):
-    """Secure admin login endpoint with bcrypt password verification"""
+    """Secure admin login endpoint with bcrypt password verification using database"""
     # Clean up expired sessions first
     cleanup_expired_sessions()
     
@@ -836,8 +1367,9 @@ async def admin_login(login_data: AdminLogin):
     if len(ACTIVE_SESSIONS) > 10:
         raise HTTPException(status_code=429, detail="Too many active sessions. Try again later.")
     
-    # Verify username and password securely
-    if login_data.username == ADMIN_USERNAME and verify_password(login_data.password, ADMIN_PASSWORD_HASH):
+    # Get admin from database
+    admin_user = get_admin_by_username(login_data.username)
+    if admin_user and verify_password(login_data.password, admin_user['password_hash']):
         # Generate secure session token
         token = secrets.token_urlsafe(32)
         ACTIVE_SESSIONS[token] = {
@@ -855,6 +1387,40 @@ async def admin_login(login_data: AdminLogin):
         import time
         time.sleep(0.5)
         raise HTTPException(status_code=401, detail="Invalid credentials")
+
+@app.post("/admin/password-change")
+async def admin_password_change(password_data: PasswordChangeRequest, username: str = Depends(verify_admin_session)):
+    """Change admin password with current password verification"""
+    current_password = password_data.current_password
+    new_password = password_data.new_password
+    
+    # Validate new password strength
+    if len(new_password) < 8:
+        raise HTTPException(status_code=400, detail="New password must be at least 8 characters long")
+    
+    if not any(c.isdigit() for c in new_password):
+        raise HTTPException(status_code=400, detail="New password must contain at least one digit")
+    
+    if not any(c.isupper() for c in new_password):
+        raise HTTPException(status_code=400, detail="New password must contain at least one uppercase letter")
+    
+    # Get current admin from database
+    admin_user = get_admin_by_username(username)
+    if not admin_user:
+        raise HTTPException(status_code=401, detail="Admin user not found")
+    
+    # Verify current password
+    if not verify_password(current_password, admin_user['password_hash']):
+        raise HTTPException(status_code=400, detail="Current password is incorrect")
+    
+    # Generate new password hash
+    new_password_hash = bcrypt.hashpw(new_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+    
+    # Update password in database
+    if update_admin_password(username, new_password_hash):
+        return {"message": "Password changed successfully"}
+    else:
+        raise HTTPException(status_code=500, detail="Failed to update password")
 
 @app.post("/admin/logout")
 async def admin_logout(request: Request, admin_user: str = Depends(verify_admin_session)):

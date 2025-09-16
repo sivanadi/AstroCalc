@@ -78,11 +78,21 @@
                     localStorage.setItem('adminToken', sessionToken);
                     showAdminPanel();
                 } else {
-                    document.getElementById('loginMessage').innerHTML = '<div class="error">' + data.detail + '</div>';
+                    const loginMessage = document.getElementById('loginMessage');
+                    loginMessage.innerHTML = '';
+                    const errorDiv = document.createElement('div');
+                    errorDiv.className = 'error';
+                    errorDiv.textContent = data.detail;
+                    loginMessage.appendChild(errorDiv);
                 }
             } catch (error) {
                 console.error('Login error:', error);
-                document.getElementById('loginMessage').innerHTML = '<div class="error">Login failed</div>';
+                const loginMessage = document.getElementById('loginMessage');
+                loginMessage.innerHTML = '';
+                const errorDiv = document.createElement('div');
+                errorDiv.className = 'error';
+                errorDiv.textContent = 'Login failed';
+                loginMessage.appendChild(errorDiv);
             }
         }
         
@@ -100,11 +110,26 @@
                 });
                 const data = await response.json();
                 
-                let html = '<h4>Existing API Keys:</h4>';
+                const apiKeysList = document.getElementById('apiKeysList');
+                apiKeysList.innerHTML = '';
+                
+                const title = document.createElement('h4');
+                title.textContent = 'Existing API Keys:';
+                apiKeysList.appendChild(title);
+                
                 for (let key in data.api_keys) {
-                    html += '<div>' + data.api_keys[key].name + ' - ' + key + ' <button onclick="deleteApiKey(\'' + key + '\')" style="background-color: #f44336;">Delete</button></div>';
+                    const keyDiv = document.createElement('div');
+                    const keyText = document.createTextNode(data.api_keys[key].name + ' - ' + key + ' ');
+                    keyDiv.appendChild(keyText);
+                    
+                    const deleteBtn = document.createElement('button');
+                    deleteBtn.textContent = 'Delete';
+                    deleteBtn.style.backgroundColor = '#f44336';
+                    deleteBtn.onclick = () => deleteApiKey(key);
+                    keyDiv.appendChild(deleteBtn);
+                    
+                    apiKeysList.appendChild(keyDiv);
                 }
-                document.getElementById('apiKeysList').innerHTML = html;
             } catch (error) {
                 console.error('Failed to load API keys');
             }
@@ -117,11 +142,26 @@
                 });
                 const data = await response.json();
                 
-                let html = '<h4>Authorized Domains:</h4>';
+                const domainsList = document.getElementById('domainsList');
+                domainsList.innerHTML = '';
+                
+                const title = document.createElement('h4');
+                title.textContent = 'Authorized Domains:';
+                domainsList.appendChild(title);
+                
                 data.domains.forEach(domain => {
-                    html += '<div>' + domain + ' <button onclick="deleteDomain(\'' + domain + '\')" style="background-color: #f44336;">Delete</button></div>';
+                    const domainDiv = document.createElement('div');
+                    const domainText = document.createTextNode(domain + ' ');
+                    domainDiv.appendChild(domainText);
+                    
+                    const deleteBtn = document.createElement('button');
+                    deleteBtn.textContent = 'Delete';
+                    deleteBtn.style.backgroundColor = '#f44336';
+                    deleteBtn.onclick = () => deleteDomain(domain);
+                    domainDiv.appendChild(deleteBtn);
+                    
+                    domainsList.appendChild(domainDiv);
                 });
-                document.getElementById('domainsList').innerHTML = html;
             } catch (error) {
                 console.error('Failed to load domains');
             }
