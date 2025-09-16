@@ -3,14 +3,15 @@ from fastapi.responses import JSONResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, validator
+from enum import Enum
 import swisseph as swe
 import pytz
 import os
 import json
 import secrets
 from datetime import datetime
-from typing import Dict, Union, Optional
+from typing import Dict, Union, Optional, List
 import hashlib
 import bcrypt
 import sqlite3
@@ -29,6 +30,7 @@ async def startup_event():
     print("Initializing database...")
     init_database()
     migrate_existing_data()
+    add_database_indexes()
     print("Database initialization completed")
 
 # Security headers middleware
@@ -222,6 +224,147 @@ class CreateDomainRequest(BaseModel):
     per_day_limit: int = 100
     per_month_limit: int = 3000
 
+# Security Enums for V1 Admin API
+class APIKeySortField(str, Enum):
+    id = "id"
+    key_name = "name"
+    created_at = "created_at"
+    updated_at = "updated_at"
+    per_minute_limit = "per_minute_limit"
+    per_day_limit = "per_day_limit"
+    per_month_limit = "per_month_limit"
+
+class DomainSortField(str, Enum):
+    id = "id"
+    domain = "domain"
+    created_at = "created_at"
+    updated_at = "updated_at"
+    per_minute_limit = "per_minute_limit"
+    per_day_limit = "per_day_limit"
+    per_month_limit = "per_month_limit"
+
+class SortOrder(str, Enum):
+    asc = "asc"
+    desc = "desc"
+
+class BulkOperationType(str, Enum):
+    delete = "delete"
+    activate = "activate"
+    deactivate = "deactivate"
+    update_limits = "update_limits"
+
+# Payload validation for update_limits operation
+class BulkUpdateLimitsPayload(BaseModel):
+    per_minute_limit: Optional[int] = Field(None, ge=1, le=10000)
+    per_day_limit: Optional[int] = Field(None, ge=1, le=1000000)
+    per_month_limit: Optional[int] = Field(None, ge=1, le=50000000)
+
+    @validator('per_minute_limit', 'per_day_limit', 'per_month_limit', pre=True)
+    def validate_positive_integers(cls, v):
+        if v is not None:
+            if not isinstance(v, int) or v <= 0:
+                raise ValueError('Limit values must be positive integers')
+        return v
+
+# V1 Admin API Models - Enhanced for scalability
+class APIKeyPaginationParams(BaseModel):
+    page: int = Field(1, ge=1, le=10000)
+    page_size: int = Field(25, ge=1, le=1000)
+    search: Optional[str] = Field("", max_length=255)
+    sort_by: APIKeySortField = APIKeySortField.created_at
+    sort_order: SortOrder = SortOrder.desc
+
+class DomainPaginationParams(BaseModel):
+    page: int = Field(1, ge=1, le=10000)
+    page_size: int = Field(25, ge=1, le=1000)
+    search: Optional[str] = Field("", max_length=255)
+    sort_by: DomainSortField = DomainSortField.created_at
+    sort_order: SortOrder = SortOrder.desc
+
+class APIKeyFilters(BaseModel):
+    is_active: Optional[bool] = None
+    created_after: Optional[datetime] = None
+    created_before: Optional[datetime] = None
+
+    @validator('created_after', 'created_before', pre=True)
+    def validate_datetime_strings(cls, v):
+        if v is not None and isinstance(v, str):
+            try:
+                return datetime.fromisoformat(v.replace('Z', '+00:00'))
+            except ValueError:
+                raise ValueError('Date must be in ISO format (YYYY-MM-DDTHH:MM:SS)')
+        return v
+
+class DomainFilters(BaseModel):
+    is_active: Optional[bool] = None
+    created_after: Optional[datetime] = None
+    created_before: Optional[datetime] = None
+
+    @validator('created_after', 'created_before', pre=True)
+    def validate_datetime_strings(cls, v):
+        if v is not None and isinstance(v, str):
+            try:
+                return datetime.fromisoformat(v.replace('Z', '+00:00'))
+            except ValueError:
+                raise ValueError('Date must be in ISO format (YYYY-MM-DDTHH:MM:SS)')
+        return v
+
+class BulkOperation(BaseModel):
+    operation: BulkOperationType
+    ids: List[int]
+    payload: Optional[BulkUpdateLimitsPayload] = None
+
+    @validator('ids')
+    def validate_ids_list(cls, v):
+        if not v or len(v) == 0:
+            raise ValueError('At least one ID must be provided')
+        if len(v) > 1000:
+            raise ValueError('Cannot process more than 1000 items at once')
+        return v
+    
+    @validator('payload')
+    def validate_payload_for_operation(cls, v, values):
+        operation = values.get('operation')
+        if operation == BulkOperationType.update_limits:
+            if v is None:
+                raise ValueError('Payload is required for update_limits operation')
+            if not any([v.per_minute_limit is not None, v.per_day_limit is not None, v.per_month_limit is not None]):
+                raise ValueError('At least one limit must be specified in payload')
+        elif v is not None:
+            raise ValueError(f'Payload not allowed for {operation} operation')
+        return v
+
+class PaginatedResponse(BaseModel):
+    items: List[dict]
+    total: int
+    page: int
+    page_size: int
+    total_pages: int
+    has_next: bool
+    has_prev: bool
+
+class APIKeyResponse(BaseModel):
+    id: int
+    key_hash: str
+    name: str
+    description: str
+    per_minute_limit: int
+    per_day_limit: int
+    per_month_limit: int
+    is_active: bool
+    created_at: str
+    updated_at: str
+
+class DomainResponse(BaseModel):
+    id: int
+    domain: str
+    per_minute_limit: int
+    per_day_limit: int
+    per_month_limit: int
+    is_active: bool
+    created_at: str
+    updated_at: str
+
 
 # Utility functions
 def decimal_to_dms(decimal_degrees):
@@ -377,6 +520,43 @@ def init_database():
     
     conn.commit()
     conn.close()
+
+def add_database_indexes():
+    """Add additional performance indexes for v1 admin queries"""
+    conn = sqlite3.connect('astrology_db.sqlite3')
+    cursor = conn.cursor()
+    
+    try:
+        # Additional indexes for improved v1 admin query performance
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_api_keys_is_active ON api_keys(is_active)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_api_keys_created_at ON api_keys(created_at)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_api_keys_updated_at ON api_keys(updated_at)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_api_keys_name ON api_keys(name)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_api_keys_per_minute_limit ON api_keys(per_minute_limit)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_api_keys_per_day_limit ON api_keys(per_day_limit)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_api_keys_per_month_limit ON api_keys(per_month_limit)')
+        
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_domains_is_active ON authorized_domains(is_active)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_domains_created_at ON authorized_domains(created_at)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_domains_updated_at ON authorized_domains(updated_at)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_domains_per_minute_limit ON authorized_domains(per_minute_limit)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_domains_per_day_limit ON authorized_domains(per_day_limit)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_domains_per_month_limit ON authorized_domains(per_month_limit)')
+        
+        # Composite indexes for common filter combinations
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_api_keys_active_created ON api_keys(is_active, created_at)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_domains_active_created ON authorized_domains(is_active, created_at)')
+        
+        conn.commit()
+        conn.close()
+        print("Database performance indexes added successfully")
+        return True
+        
+    except Exception as e:
+        conn.rollback()
+        conn.close()
+        print(f"Error adding indexes: {e}")
+        return False
 
 def migrate_existing_data():
     """Migrate existing in-memory data to database"""
@@ -700,6 +880,269 @@ def get_domain_limits(domain: str):
             'is_active': bool(result[3])
         }
     return None
+
+# V1 Admin API Enhanced Database Functions - Scalable for large datasets
+# Note: add_database_indexes() function is defined earlier and called during startup
+
+def get_api_keys_v1(page: int = 1, page_size: int = 25, search: str = "", 
+                   sort_by: APIKeySortField = APIKeySortField.created_at, sort_order: SortOrder = SortOrder.desc,
+                   is_active: Optional[bool] = None, created_after: Optional[datetime] = None, created_before: Optional[datetime] = None):
+    """Enhanced API keys retrieval with full filtering, sorting, and pagination"""
+    conn = sqlite3.connect('astrology_db.sqlite3')
+    cursor = conn.cursor()
+    
+    # Build WHERE clause dynamically
+    where_conditions = []
+    params = []
+    
+    # Search functionality
+    if search:
+        search_pattern = f'%{search}%'
+        where_conditions.append('(name LIKE ? OR description LIKE ?)')
+        params.extend([search_pattern, search_pattern])
+    
+    # Status filter
+    if is_active is not None:
+        where_conditions.append('is_active = ?')
+        params.append(is_active)
+    
+    # Date filters (now properly validated)
+    if created_after:
+        where_conditions.append('created_at >= ?')
+        params.append(created_after.isoformat())
+    if created_before:
+        where_conditions.append('created_at <= ?')
+        params.append(created_before.isoformat())
+    
+    where_clause = 'WHERE ' + ' AND '.join(where_conditions) if where_conditions else ''
+    
+    # Use secure enum values - no longer vulnerable to SQL injection
+    order_clause = f'ORDER BY {sort_by.value} {sort_order.value.upper()}'
+    
+    # Get total count
+    count_query = f'SELECT COUNT(*) FROM api_keys {where_clause}'
+    cursor.execute(count_query, params)
+    total = cursor.fetchone()[0]
+    
+    # Calculate pagination
+    offset = (page - 1) * page_size
+    total_pages = (total + page_size - 1) // page_size
+    
+    # Get paginated results
+    query = f'''
+        SELECT id, key_hash, name, description, per_minute_limit, per_day_limit, per_month_limit, 
+               is_active, created_at, updated_at
+        FROM api_keys 
+        {where_clause}
+        {order_clause}
+        LIMIT ? OFFSET ?
+    '''
+    cursor.execute(query, params + [page_size, offset])
+    
+    items = []
+    for row in cursor.fetchall():
+        items.append({
+            'id': row[0],
+            'key_hash': row[1],
+            'name': row[2],
+            'description': row[3],
+            'per_minute_limit': row[4],
+            'per_day_limit': row[5],
+            'per_month_limit': row[6],
+            'is_active': bool(row[7]),
+            'created_at': row[8],
+            'updated_at': row[9]
+        })
+    
+    conn.close()
+    
+    return {
+        'items': items,
+        'total': total,
+        'page': page,
+        'page_size': page_size,
+        'total_pages': total_pages,
+        'has_next': page < total_pages,
+        'has_prev': page > 1
+    }
+
+def get_domains_v1(page: int = 1, page_size: int = 25, search: str = "", 
+                  sort_by: DomainSortField = DomainSortField.created_at, sort_order: SortOrder = SortOrder.desc,
+                  is_active: Optional[bool] = None, created_after: Optional[datetime] = None, created_before: Optional[datetime] = None):
+    """Enhanced domains retrieval with full filtering, sorting, and pagination"""
+    conn = sqlite3.connect('astrology_db.sqlite3')
+    cursor = conn.cursor()
+    
+    # Build WHERE clause dynamically
+    where_conditions = []
+    params = []
+    
+    # Search functionality
+    if search:
+        search_pattern = f'%{search}%'
+        where_conditions.append('domain LIKE ?')
+        params.append(search_pattern)
+    
+    # Status filter
+    if is_active is not None:
+        where_conditions.append('is_active = ?')
+        params.append(is_active)
+    
+    # Date filters (now properly validated)
+    if created_after:
+        where_conditions.append('created_at >= ?')
+        params.append(created_after.isoformat())
+    if created_before:
+        where_conditions.append('created_at <= ?')
+        params.append(created_before.isoformat())
+    
+    where_clause = 'WHERE ' + ' AND '.join(where_conditions) if where_conditions else ''
+    
+    # Use secure enum values - no longer vulnerable to SQL injection
+    order_clause = f'ORDER BY {sort_by.value} {sort_order.value.upper()}'
+    
+    # Get total count
+    count_query = f'SELECT COUNT(*) FROM authorized_domains {where_clause}'
+    cursor.execute(count_query, params)
+    total = cursor.fetchone()[0]
+    
+    # Calculate pagination
+    offset = (page - 1) * page_size
+    total_pages = (total + page_size - 1) // page_size
+    
+    # Get paginated results
+    query = f'''
+        SELECT id, domain, per_minute_limit, per_day_limit, per_month_limit, 
+               is_active, created_at, updated_at
+        FROM authorized_domains 
+        {where_clause}
+        {order_clause}
+        LIMIT ? OFFSET ?
+    '''
+    cursor.execute(query, params + [page_size, offset])
+    
+    items = []
+    for row in cursor.fetchall():
+        items.append({
+            'id': row[0],
+            'domain': row[1],
+            'per_minute_limit': row[2],
+            'per_day_limit': row[3],
+            'per_month_limit': row[4],
+            'is_active': bool(row[5]),
+            'created_at': row[6],
+            'updated_at': row[7]
+        })
+    
+    conn.close()
+    
+    return {
+        'items': items,
+        'total': total,
+        'page': page,
+        'page_size': page_size,
+        'total_pages': total_pages,
+        'has_next': page < total_pages,
+        'has_prev': page > 1
+    }
+
+def bulk_update_api_keys(bulk_op: BulkOperation):
+    """Perform bulk operations on API keys with secure validation"""
+    conn = sqlite3.connect('astrology_db.sqlite3')
+    cursor = conn.cursor()
+    
+    operation = bulk_op.operation.value  # Initialize early to avoid unbound error
+    try:
+        ids = bulk_op.ids
+        payload = bulk_op.payload
+        
+        # Generate secure placeholders for parameterized queries
+        placeholders = ','.join(['?'] * len(ids))
+        
+        if operation == "delete":
+            cursor.execute(f'DELETE FROM api_keys WHERE id IN ({placeholders})', ids)
+        elif operation == "activate":
+            cursor.execute(f'UPDATE api_keys SET is_active = TRUE, updated_at = CURRENT_TIMESTAMP WHERE id IN ({placeholders})', ids)
+        elif operation == "deactivate":
+            cursor.execute(f'UPDATE api_keys SET is_active = FALSE, updated_at = CURRENT_TIMESTAMP WHERE id IN ({placeholders})', ids)
+        elif operation == "update_limits" and payload is not None:
+            # Payload is already validated by Pydantic model
+            params = []
+            set_clause = []
+            
+            if payload.per_minute_limit is not None:
+                params.append(payload.per_minute_limit)
+                set_clause.append('per_minute_limit = ?')
+            if payload.per_day_limit is not None:
+                params.append(payload.per_day_limit)
+                set_clause.append('per_day_limit = ?')
+            if payload.per_month_limit is not None:
+                params.append(payload.per_month_limit)
+                set_clause.append('per_month_limit = ?')
+            
+            if set_clause:
+                set_clause.append('updated_at = CURRENT_TIMESTAMP')
+                params.extend(ids)
+                cursor.execute(f'UPDATE api_keys SET {", ".join(set_clause)} WHERE id IN ({placeholders})', params)
+        
+        affected_rows = cursor.rowcount
+        conn.commit()
+        conn.close()
+        return {"success": True, "affected_rows": affected_rows, "operation": operation}
+    
+    except Exception as e:
+        conn.rollback()
+        conn.close()
+        return {"success": False, "error": str(e), "operation": operation}
+
+def bulk_update_domains(bulk_op: BulkOperation):
+    """Perform bulk operations on domains with secure validation"""
+    conn = sqlite3.connect('astrology_db.sqlite3')
+    cursor = conn.cursor()
+    
+    operation = bulk_op.operation.value  # Initialize early to avoid unbound error
+    try:
+        ids = bulk_op.ids
+        payload = bulk_op.payload
+        
+        # Generate secure placeholders for parameterized queries
+        placeholders = ','.join(['?'] * len(ids))
+        
+        if operation == "delete":
+            cursor.execute(f'DELETE FROM authorized_domains WHERE id IN ({placeholders})', ids)
+        elif operation == "activate":
+            cursor.execute(f'UPDATE authorized_domains SET is_active = TRUE, updated_at = CURRENT_TIMESTAMP WHERE id IN ({placeholders})', ids)
+        elif operation == "deactivate":
+            cursor.execute(f'UPDATE authorized_domains SET is_active = FALSE, updated_at = CURRENT_TIMESTAMP WHERE id IN ({placeholders})', ids)
+        elif operation == "update_limits" and payload is not None:
+            # Payload is already validated by Pydantic model
+            params = []
+            set_clause = []
+            
+            if payload.per_minute_limit is not None:
+                params.append(payload.per_minute_limit)
+                set_clause.append('per_minute_limit = ?')
+            if payload.per_day_limit is not None:
+                params.append(payload.per_day_limit)
+                set_clause.append('per_day_limit = ?')
+            if payload.per_month_limit is not None:
+                params.append(payload.per_month_limit)
+                set_clause.append('per_month_limit = ?')
+            
+            if set_clause:
+                set_clause.append('updated_at = CURRENT_TIMESTAMP')
+                params.extend(ids)
+                cursor.execute(f'UPDATE authorized_domains SET {", ".join(set_clause)} WHERE id IN ({placeholders})', params)
+        
+        affected_rows = cursor.rowcount
+        conn.commit()
+        conn.close()
+        return {"success": True, "affected_rows": affected_rows, "operation": operation}
+    
+    except Exception as e:
+        conn.rollback()
+        conn.close()
+        return {"success": False, "error": str(e), "operation": operation}
 
 def verify_api_key(credentials: HTTPAuthorizationCredentials = Depends(security)):
     """Verify API key if provided"""
