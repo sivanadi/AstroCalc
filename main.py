@@ -175,8 +175,14 @@ class ChartRequest(BaseModel):
     lat: float
     lon: float
     tz: str = 'UTC'
-    ayanamsha: str = 'lahiri'
-    house_system: str = 'placidus'
+    # Legacy fields - kept for backward compatibility
+    ayanamsha: str = 'lahiri'  # Will be used as fallback if natal/transit specific ones not provided
+    house_system: str = 'placidus'  # Will be used as fallback if natal/transit specific ones not provided
+    # New separate fields - optional to maintain backward compatibility
+    natal_ayanamsha: Optional[str] = None  # Separate ayanamsha for natal calculations
+    natal_house_system: Optional[str] = None  # Separate house system for natal calculations
+    transit_ayanamsha: Optional[str] = None  # Separate ayanamsha for transit calculations
+    transit_house_system: Optional[str] = None  # Separate house system for transit calculations
 
 class AdminLogin(BaseModel):
     username: str
@@ -1131,12 +1137,22 @@ async def calculate_chart_get(
     tz: str = 'UTC',
     ayanamsha: str = 'lahiri',
     house_system: str = 'placidus',
+    natal_ayanamsha: str = '',
+    natal_house_system: str = '',
+    transit_ayanamsha: str = '',
+    transit_house_system: str = '',
     _: bool = Depends(verify_access)
 ):
     """GET endpoint for chart calculation with natal and transit data"""
+    # Use specific parameters if provided, otherwise fall back to general ones
+    natal_ayan = natal_ayanamsha if natal_ayanamsha else ayanamsha
+    natal_house = natal_house_system if natal_house_system else house_system
+    transit_ayan = transit_ayanamsha if transit_ayanamsha else ayanamsha
+    transit_house = transit_house_system if transit_house_system else house_system
+    
     result = await build_natal_transit_response(
         year, month, day, hour, minute, second,
-        lat, lon, tz, ayanamsha, house_system
+        lat, lon, tz, natal_ayan, natal_house, transit_ayan, transit_house
     )
     return JSONResponse(content=result)
 
@@ -1147,11 +1163,17 @@ async def calculate_chart_post(
     _: bool = Depends(verify_access)
 ):
     """POST endpoint for chart calculation with natal and transit data"""
+    # Use specific parameters if provided, otherwise fall back to general ones
+    natal_ayan = chart_data.natal_ayanamsha if chart_data.natal_ayanamsha else chart_data.ayanamsha
+    natal_house = chart_data.natal_house_system if chart_data.natal_house_system else chart_data.house_system
+    transit_ayan = chart_data.transit_ayanamsha if chart_data.transit_ayanamsha else chart_data.ayanamsha
+    transit_house = chart_data.transit_house_system if chart_data.transit_house_system else chart_data.house_system
+    
     result = await build_natal_transit_response(
         chart_data.year, chart_data.month, chart_data.day, 
         chart_data.hour, chart_data.minute, chart_data.second,
         chart_data.lat, chart_data.lon, 
-        chart_data.tz, chart_data.ayanamsha, chart_data.house_system
+        chart_data.tz, natal_ayan, natal_house, transit_ayan, transit_house
     )
     return JSONResponse(content=result)
 
@@ -1275,14 +1297,15 @@ async def calculate_chart_internal(
 
 async def build_natal_transit_response(
     year: int, month: int, day: int, hour: int, minute: int, second: int,
-    lat: float, lon: float, tz: str, ayanamsha: str, house_system: str
+    lat: float, lon: float, tz: str, natal_ayanamsha: str, natal_house_system: str,
+    transit_ayanamsha: str, transit_house_system: str
 ):
     """Build combined natal and transit response"""
     try:
-        # Calculate natal chart
+        # Calculate natal chart with natal-specific ayanamsha and house system
         natal_result = await calculate_chart_internal(
             year, month, day, hour, minute, second,
-            lat, lon, tz, ayanamsha, house_system
+            lat, lon, tz, natal_ayanamsha, natal_house_system
         )
         
         # Extract natal data from JSONResponse
@@ -1293,11 +1316,11 @@ async def build_natal_transit_response(
         now_utc = datetime.now(pytz.UTC)
         now_local = now_utc.astimezone(user_tz)
         
-        # Calculate transit chart
+        # Calculate transit chart with transit-specific ayanamsha and house system
         transit_result = await calculate_chart_internal(
             now_local.year, now_local.month, now_local.day,
             now_local.hour, now_local.minute, now_local.second,
-            lat, lon, tz, ayanamsha, house_system
+            lat, lon, tz, transit_ayanamsha, transit_house_system
         )
         
         # Extract transit data from JSONResponse
@@ -1309,13 +1332,15 @@ async def build_natal_transit_response(
             "other_details": {
                 "natal_date_formatted": convert_julian_to_date(natal_data["julian_day_ut"], tz),
                 "transit_date_formatted": convert_julian_to_date(transit_data["julian_day_ut"], tz),
-                "ayanamsha_name": natal_data["ayanamsha_name"],
+                "natal_ayanamsha_name": natal_data["ayanamsha_name"],
+                "transit_ayanamsha_name": transit_data["ayanamsha_name"],
                 "ayanamsha_value_natal": natal_data["ayanamsha_value_decimal"],
                 "ayanamsha_value_transit": transit_data["ayanamsha_value_decimal"],
-                "house_system_used": natal_data["house_system_used"],
+                "natal_house_system_used": natal_data["house_system_used"],
+                "transit_house_system_used": transit_data["house_system_used"],
                 "timezone_used": natal_data["timezone_used"],
                 "natal_input_time_ut": natal_data["input_time_ut"],
-                "transit_input_time_ut": natal_data["input_time_ut"]  # Same as natal for display consistency
+                "transit_input_time_ut": transit_data["input_time_ut"]
             },
             
             "natal_planets": dict(Ascendant=natal_data["ascendant_full_precision"], **natal_data["planets_full_precision"]),
