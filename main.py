@@ -215,6 +215,43 @@ def convert_timezone_to_ut(year, month, day, hour, minute, second, timezone_str)
         # If timezone conversion fails, assume UTC
         return hour + minute/60 + second/3600
 
+def convert_julian_to_date(julian_day_ut, timezone_str='UTC'):
+    """Convert Julian Day to readable date format like '21 July 1986 time: 17:45:23'"""
+    try:
+        # Convert Julian Day to calendar date using Swiss Ephemeris
+        year, month, day, hour_ut = swe.revjul(julian_day_ut)
+        
+        # Convert decimal hour to hours, minutes, seconds
+        hours = int(hour_ut)
+        minutes = int((hour_ut - hours) * 60)
+        seconds = int(((hour_ut - hours) * 60 - minutes) * 60)
+        
+        # Create datetime object in UTC
+        utc_dt = datetime(int(year), int(month), int(day), hours, minutes, seconds)
+        
+        # Convert to user's timezone if not UTC
+        if timezone_str != 'UTC':
+            try:
+                tz = pytz.timezone(timezone_str)
+                utc_dt = pytz.UTC.localize(utc_dt)
+                local_dt = utc_dt.astimezone(tz)
+            except:
+                local_dt = utc_dt
+        else:
+            local_dt = utc_dt
+        
+        # Format as "21 July 1986 time: 17:45:23"
+        month_names = ['', 'January', 'February', 'March', 'April', 'May', 'June',
+                      'July', 'August', 'September', 'October', 'November', 'December']
+        
+        formatted_date = f"{local_dt.day} {month_names[local_dt.month]} {local_dt.year} time: {local_dt.hour:02d}:{local_dt.minute:02d}:{local_dt.second:02d}"
+        
+        return formatted_date
+        
+    except Exception as e:
+        # Fallback format if conversion fails
+        return f"Julian Day: {julian_day_ut}"
+
 def verify_api_key(credentials: HTTPAuthorizationCredentials = Depends(security)):
     """Verify API key if provided"""
     if credentials:
@@ -735,37 +772,19 @@ async def build_natal_transit_response(
         # Extract transit data from JSONResponse
         transit_data = json.loads(bytes(transit_result.body).decode())
         
-        # Structure the combined response
+        # Structure the clean response with only fields used by frontend
         response_data = {
-            # Original natal chart data (backward compatibility)
-            **natal_data,
-            
-            # Transit data
-            "transit_julian_day_ut": transit_data["julian_day_ut"],
-            "transit_ascendant_deg": transit_data["ascendant_deg"],
-            "transit_ascendant_full_precision": transit_data["ascendant_full_precision"],
-            "transit_planets_deg": transit_data["planets_deg"],
-            "transit_planets_full_precision": transit_data["planets_full_precision"],
-            "transit_house_cusps": transit_data["house_cusps"],
-            "transit_ayanamsha_value_decimal": transit_data["ayanamsha_value_decimal"],
-            "transit_ayanamsha_value_dms": transit_data["ayanamsha_value_dms"],
-            "transit_input_time_ut": transit_data["input_time_ut"],
-            "transit_date": f"{now_local.year}-{now_local.month:02d}-{now_local.day:02d}",
-            "transit_time": f"{now_local.hour:02d}:{now_local.minute:02d}:{now_local.second:02d}",
-            
-            # 4-column display data
+            # Frontend display data
             "other_details": {
-                "natal_julian_day": natal_data["julian_day_ut"],
-                "transit_julian_day": transit_data["julian_day_ut"],
+                "natal_date_formatted": convert_julian_to_date(natal_data["julian_day_ut"], tz),
+                "transit_date_formatted": convert_julian_to_date(transit_data["julian_day_ut"], tz),
                 "ayanamsha_name": natal_data["ayanamsha_name"],
                 "ayanamsha_value_natal": natal_data["ayanamsha_value_decimal"],
                 "ayanamsha_value_transit": transit_data["ayanamsha_value_decimal"],
                 "house_system_used": natal_data["house_system_used"],
                 "timezone_used": natal_data["timezone_used"],
                 "natal_input_time_ut": natal_data["input_time_ut"],
-                "transit_input_time_ut": transit_data["input_time_ut"],
-                "transit_date": f"{now_local.year}-{now_local.month:02d}-{now_local.day:02d}",
-                "transit_time": f"{now_local.hour:02d}:{now_local.minute:02d}:{now_local.second:02d}"
+                "transit_input_time_ut": transit_data["input_time_ut"]
             },
             
             "natal_planets": dict(Ascendant=natal_data["ascendant_full_precision"], **natal_data["planets_full_precision"]),

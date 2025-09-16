@@ -416,13 +416,23 @@
                 <button onclick="openApiResponse()" class="btn-secondary">Open API Response in New Window</button>
             </div>
             
-            <!-- Other Details - Full Row -->
-            <div class="result-card" style="margin-bottom: 20px;">
-                <div class="result-title">
-                    Other Details
-                    <button onclick="copyOtherDetails()" class="btn-copy">Copy Details</button>
+            <!-- Natal and Transit Other Details - Two Column Layout -->
+            <div class="results-grid" style="margin-bottom: 20px;">
+                <div class="result-card">
+                    <div class="result-title">
+                        Natal Other Details
+                        <button onclick="copyNatalOtherDetails()" class="btn-copy">Copy Details</button>
+                    </div>
+                    <div id="natalOtherDetails"></div>
                 </div>
-                <div id="otherDetails"></div>
+                
+                <div class="result-card">
+                    <div class="result-title">
+                        Transit Other Details
+                        <button onclick="copyTransitOtherDetails()" class="btn-copy">Copy Details</button>
+                    </div>
+                    <div id="transitOtherDetails"></div>
+                </div>
             </div>
             
             <!-- 4-Column Layout -->
@@ -539,19 +549,27 @@
             // API URL
             document.getElementById('apiUrl').textContent = currentApiUrl;
             
-            // Other Details
-            const otherDetailsHtml = `
-                <p><strong>Natal Julian Day:</strong> ${data.other_details.natal_julian_day}</p>
-                <p><strong>Transit Julian Day:</strong> ${data.other_details.transit_julian_day}</p>
+            // Natal Other Details
+            const natalOtherDetailsHtml = `
+                <p><strong>Date:</strong> ${data.other_details.natal_date_formatted}</p>
                 <p><strong>Ayanamsha:</strong> ${data.other_details.ayanamsha_name}</p>
-                <p><strong>Ayanamsha Value (Natal):</strong> ${data.other_details.ayanamsha_value_natal}°</p>
-                <p><strong>Ayanamsha Value (Transit):</strong> ${data.other_details.ayanamsha_value_transit}°</p>
+                <p><strong>Ayanamsha Value:</strong> ${data.other_details.ayanamsha_value_natal}°</p>
                 <p><strong>House System:</strong> ${data.other_details.house_system_used}</p>
                 <p><strong>Timezone:</strong> ${data.other_details.timezone_used}</p>
-                <p><strong>Natal Time (UT):</strong> ${data.other_details.natal_input_time_ut}</p>
-                <p><strong>Transit Time (UT):</strong> ${data.other_details.transit_input_time_ut}</p>
+                <p><strong>Time (UT):</strong> ${data.other_details.natal_input_time_ut}</p>
             `;
-            document.getElementById('otherDetails').innerHTML = otherDetailsHtml;
+            document.getElementById('natalOtherDetails').innerHTML = natalOtherDetailsHtml;
+            
+            // Transit Other Details
+            const transitOtherDetailsHtml = `
+                <p><strong>Date:</strong> ${data.other_details.transit_date_formatted}</p>
+                <p><strong>Ayanamsha:</strong> ${data.other_details.ayanamsha_name}</p>
+                <p><strong>Ayanamsha Value:</strong> ${data.other_details.ayanamsha_value_transit}°</p>
+                <p><strong>House System:</strong> ${data.other_details.house_system_used}</p>
+                <p><strong>Timezone:</strong> ${data.other_details.timezone_used}</p>
+                <p><strong>Time (UT):</strong> ${data.other_details.transit_input_time_ut}</p>
+            `;
+            document.getElementById('transitOtherDetails').innerHTML = transitOtherDetailsHtml;
             
             // Natal Planets
             const natalPlanetsList = document.getElementById('natalPlanetsList');
@@ -618,20 +636,33 @@
             });
         }
 
-        function copyOtherDetails() {
+        function copyNatalOtherDetails() {
             if (!currentResults) return;
             
             const info = `
-Other Details:
-Natal Julian Day: ${currentResults.other_details.natal_julian_day}
-Transit Julian Day: ${currentResults.other_details.transit_julian_day}
+Natal Other Details:
+Date: ${currentResults.other_details.natal_date_formatted}
 Ayanamsha: ${currentResults.other_details.ayanamsha_name}
-Ayanamsha Value (Natal): ${currentResults.other_details.ayanamsha_value_natal}°
-Ayanamsha Value (Transit): ${currentResults.other_details.ayanamsha_value_transit}°
+Ayanamsha Value: ${currentResults.other_details.ayanamsha_value_natal}°
 House System: ${currentResults.other_details.house_system_used}
 Timezone: ${currentResults.other_details.timezone_used}
-Natal Time (UT): ${currentResults.other_details.natal_input_time_ut}
-Transit Time (UT): ${currentResults.other_details.transit_input_time_ut}
+Time (UT): ${currentResults.other_details.natal_input_time_ut}
+            `.trim();
+            
+            copyToClipboard(info);
+        }
+        
+        function copyTransitOtherDetails() {
+            if (!currentResults) return;
+            
+            const info = `
+Transit Other Details:
+Date: ${currentResults.other_details.transit_date_formatted}
+Ayanamsha: ${currentResults.other_details.ayanamsha_name}
+Ayanamsha Value: ${currentResults.other_details.ayanamsha_value_transit}°
+House System: ${currentResults.other_details.house_system_used}
+Timezone: ${currentResults.other_details.timezone_used}
+Time (UT): ${currentResults.other_details.transit_input_time_ut}
             `.trim();
             
             copyToClipboard(info);
