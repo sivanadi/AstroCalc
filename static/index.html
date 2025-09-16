@@ -263,6 +263,24 @@
             .results-grid {
                 grid-template-columns: 1fr;
             }
+            
+            /* 4-column layout responsive */
+            .four-column-grid {
+                grid-template-columns: 1fr !important;
+            }
+        }
+        
+        .four-column-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+        
+        @media (max-width: 1200px) {
+            .four-column-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
         }
     </style>
 </head>
@@ -398,35 +416,47 @@
                 <button onclick="openApiResponse()" class="btn-secondary">Open API Response in New Window</button>
             </div>
             
-            <div class="results-grid">
+            <!-- Other Details - Full Row -->
+            <div class="result-card" style="margin-bottom: 20px;">
+                <div class="result-title">
+                    Other Details
+                    <button onclick="copyOtherDetails()" class="btn-copy">Copy Details</button>
+                </div>
+                <div id="otherDetails"></div>
+            </div>
+            
+            <!-- 4-Column Layout -->
+            <div class="four-column-grid">
                 <div class="result-card">
                     <div class="result-title">
-                        Chart Information
-                        <button onclick="copyChartInfo()" class="btn-copy">Copy Info</button>
+                        Natal Planets
+                        <button onclick="copyNatalPlanets()" class="btn-copy">Copy</button>
                     </div>
-                    <div id="chartInfo"></div>
+                    <ul id="natalPlanetsList" class="planet-list"></ul>
                 </div>
                 
                 <div class="result-card">
                     <div class="result-title">
-                        Ascendant & Planetary Longitudes
-                        <button onclick="copyAllLongitudes()" class="btn-copy">Copy All Longitudes</button>
+                        Natal House Cusps
+                        <button onclick="copyNatalHouseCusps()" class="btn-copy">Copy</button>
                     </div>
-                    <ul id="planetList" class="planet-list">
-                        <li id="ascendantItem" class="planet-item">
-                            <span class="planet-name">Ascendant</span>
-                            <span id="ascendantDegree" class="planet-degree"></span>
-                        </li>
-                    </ul>
+                    <ul id="natalHouseCuspsList" class="planet-list"></ul>
                 </div>
                 
                 <div class="result-card">
                     <div class="result-title">
-                        House Cusps
-                        <button onclick="copyHouseCusps()" class="btn-copy">Copy House Cusps</button>
+                        Transit Planets
+                        <button onclick="copyTransitPlanets()" class="btn-copy">Copy</button>
                     </div>
-                    <div id="houseSystemInfo" style="margin-bottom: 10px; font-size: 14px; color: #666;"></div>
-                    <ul id="houseCuspsList" class="planet-list"></ul>
+                    <ul id="transitPlanetsList" class="planet-list"></ul>
+                </div>
+                
+                <div class="result-card">
+                    <div class="result-title">
+                        Transit House Cusps
+                        <button onclick="copyTransitHouseCusps()" class="btn-copy">Copy</button>
+                    </div>
+                    <ul id="transitHouseCuspsList" class="planet-list"></ul>
                 </div>
             </div>
         </div>
@@ -462,8 +492,8 @@
             document.getElementById('error').style.display = 'none';
             
             try {
-                // Try POST first
-                let response = await fetch('/chart', {
+                // Try POST to natal-transit endpoint
+                let response = await fetch('/chart/natal-transit', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -478,21 +508,8 @@
                 const result = await response.json();
                 currentResults = result;
                 
-                // Create GET URL for API reference
-                const params = new URLSearchParams({
-                    year: requestData.year,
-                    month: requestData.month,
-                    day: requestData.day,
-                    hour: requestData.hour,
-                    minute: requestData.minute,
-                    second: requestData.second,
-                    lat: requestData.lat,
-                    lon: requestData.lon,
-                    tz: requestData.tz,
-                    ayanamsha: requestData.ayanamsha,
-                    house_system: requestData.house_system
-                });
-                currentApiUrl = `${window.location.origin}/chart?${params.toString()}`;
+                // Create API URL for reference
+                currentApiUrl = `${window.location.origin}/chart/natal-transit`;
                 
                 displayResults(result);
                 
@@ -509,60 +526,58 @@
             // API URL
             document.getElementById('apiUrl').textContent = currentApiUrl;
             
-            // Chart Information
-            const chartInfo = `
-                <p><strong>Julian Day (UT):</strong> ${data.julian_day_ut}</p>
-                <p><strong>Ayanamsha:</strong> ${data.ayanamsha_name || 'N.C. Lahiri'}</p>
-                <p><strong>Ayanamsha Value:</strong> ${data.ayanamsha_value_dms || 'N/A'} (${data.ayanamsha_value_decimal || 'N/A'}°)</p>
-                <p><strong>Timezone:</strong> ${data.timezone_used || 'UTC'}</p>
-                <p><strong>Input Time (UT):</strong> ${data.input_time_ut || data.hour || 'N/A'}</p>
+            // Other Details
+            const otherDetailsHtml = `
+                <p><strong>Natal Julian Day:</strong> ${data.other_details.natal_julian_day}</p>
+                <p><strong>Transit Julian Day:</strong> ${data.other_details.transit_julian_day}</p>
+                <p><strong>Ayanamsha:</strong> ${data.other_details.ayanamsha_name}</p>
+                <p><strong>Ayanamsha Value (Natal):</strong> ${data.other_details.ayanamsha_value_natal}°</p>
+                <p><strong>Ayanamsha Value (Transit):</strong> ${data.other_details.ayanamsha_value_transit}°</p>
+                <p><strong>House System:</strong> ${data.other_details.house_system_used}</p>
+                <p><strong>Timezone:</strong> ${data.other_details.timezone_used}</p>
+                <p><strong>Natal Time (UT):</strong> ${data.other_details.natal_input_time_ut}</p>
+                <p><strong>Transit Time (UT):</strong> ${data.other_details.transit_input_time_ut}</p>
             `;
-            document.getElementById('chartInfo').innerHTML = chartInfo;
+            document.getElementById('otherDetails').innerHTML = otherDetailsHtml;
             
-            // Combined Ascendant and Planets display
-            const planetList = document.getElementById('planetList');
-            
-            // Set Ascendant with full precision
-            const ascendantFullPrecision = data.ascendant_full_precision || data.ascendant_deg;
-            document.getElementById('ascendantDegree').textContent = `${ascendantFullPrecision}°`;
-            
-            // Get full precision planet data
-            const planetsFullPrecision = data.planets_full_precision || data.planets_deg || {};
-            
-            // Clear existing planets (keep ascendant)
-            const existingPlanets = planetList.querySelectorAll('li:not(#ascendantItem)');
-            existingPlanets.forEach(li => li.remove());
-            
-            // Add planets with full precision
-            for (const [planet, longitude] of Object.entries(planetsFullPrecision)) {
+            // Natal Planets
+            const natalPlanetsList = document.getElementById('natalPlanetsList');
+            natalPlanetsList.innerHTML = '';
+            for (const [planet, longitude] of Object.entries(data.natal_planets)) {
                 const li = document.createElement('li');
                 li.className = 'planet-item';
-                
-                li.innerHTML = `
-                    <span class="planet-name">${planet}</span>
-                    <span class="planet-degree">${longitude}°</span>
-                `;
-                planetList.appendChild(li);
+                li.innerHTML = `<span class="planet-name">${planet}</span><span class="planet-degree">${longitude}°</span>`;
+                natalPlanetsList.appendChild(li);
             }
             
-            // Display house cusps
-            const houseCuspsList = document.getElementById('houseCuspsList');
-            houseCuspsList.innerHTML = '';
+            // Natal House Cusps
+            const natalHouseCuspsList = document.getElementById('natalHouseCuspsList');
+            natalHouseCuspsList.innerHTML = '';
+            for (const [house, cusp] of Object.entries(data.natal_house_cusps)) {
+                const li = document.createElement('li');
+                li.className = 'planet-item';
+                li.innerHTML = `<span class="planet-name">${house}</span><span class="planet-degree">${cusp}°</span>`;
+                natalHouseCuspsList.appendChild(li);
+            }
             
-            if (data.house_cusps && data.house_system_used) {
-                document.getElementById('houseSystemInfo').textContent = `Using ${data.house_system_used} House System`;
-                
-                const houseCusps = data.house_cusps;
-                for (let i = 0; i < houseCusps.length; i++) {
-                    const li = document.createElement('li');
-                    li.className = 'planet-item';
-                    
-                    li.innerHTML = `
-                        <span class="planet-name">House ${i + 1}</span>
-                        <span class="planet-degree">${houseCusps[i]}°</span>
-                    `;
-                    houseCuspsList.appendChild(li);
-                }
+            // Transit Planets
+            const transitPlanetsList = document.getElementById('transitPlanetsList');
+            transitPlanetsList.innerHTML = '';
+            for (const [planet, longitude] of Object.entries(data.transit_planets)) {
+                const li = document.createElement('li');
+                li.className = 'planet-item';
+                li.innerHTML = `<span class="planet-name">${planet}</span><span class="planet-degree">${longitude}°</span>`;
+                transitPlanetsList.appendChild(li);
+            }
+            
+            // Transit House Cusps
+            const transitHouseCuspsList = document.getElementById('transitHouseCuspsList');
+            transitHouseCuspsList.innerHTML = '';
+            for (const [house, cusp] of Object.entries(data.transit_house_cusps)) {
+                const li = document.createElement('li');
+                li.className = 'planet-item';
+                li.innerHTML = `<span class="planet-name">${house}</span><span class="planet-degree">${cusp}°</span>`;
+                transitHouseCuspsList.appendChild(li);
             }
             
             document.getElementById('results').style.display = 'block';
@@ -590,48 +605,68 @@
             });
         }
 
-        function copyChartInfo() {
+        function copyOtherDetails() {
             if (!currentResults) return;
             
             const info = `
-Vedic Astrology Chart Information:
-Julian Day (UT): ${currentResults.julian_day_ut}
-Ayanamsha: ${currentResults.ayanamsha_name || 'N.C. Lahiri'}
-Ayanamsha Value: ${currentResults.ayanamsha_value_dms || 'N/A'} (${currentResults.ayanamsha_value_decimal || 'N/A'}°)
-Timezone: ${currentResults.timezone_used || 'UTC'}
-Input Time (UT): ${currentResults.input_time_ut || currentResults.hour || 'N/A'}
+Other Details:
+Natal Julian Day: ${currentResults.other_details.natal_julian_day}
+Transit Julian Day: ${currentResults.other_details.transit_julian_day}
+Ayanamsha: ${currentResults.other_details.ayanamsha_name}
+Ayanamsha Value (Natal): ${currentResults.other_details.ayanamsha_value_natal}°
+Ayanamsha Value (Transit): ${currentResults.other_details.ayanamsha_value_transit}°
+House System: ${currentResults.other_details.house_system_used}
+Timezone: ${currentResults.other_details.timezone_used}
+Natal Time (UT): ${currentResults.other_details.natal_input_time_ut}
+Transit Time (UT): ${currentResults.other_details.transit_input_time_ut}
             `.trim();
             
             copyToClipboard(info);
         }
 
 
-        function copyAllLongitudes() {
+        function copyNatalPlanets() {
             if (!currentResults) return;
             
-            // Get ascendant and planets with full precision
-            const ascendant = `Ascendant: ${currentResults.ascendant_full_precision || currentResults.ascendant_deg}°`;
-            const planets = currentResults.planets_full_precision || currentResults.planets_deg || {};
-            const longitudes = Object.entries(planets)
-                .map(([planet, longitude]) => `${planet}: ${longitude}°`)
-                .join('\n');
+            let text = 'Natal Planets:\n';
+            for (const [planet, longitude] of Object.entries(currentResults.natal_planets)) {
+                text += `${planet}: ${longitude}°\n`;
+            }
             
-            const allData = `${ascendant}\n${longitudes}`;
-            
-            copyToClipboard(allData);
+            copyToClipboard(text.trim());
         }
-
-        function copyHouseCusps() {
-            if (!currentResults || !currentResults.house_cusps) return;
+        
+        function copyNatalHouseCusps() {
+            if (!currentResults) return;
             
-            const houseSystem = currentResults.house_system_used || 'Unknown';
-            const houseCusps = currentResults.house_cusps
-                .map((cusp, index) => `House ${index + 1}: ${cusp}°`)
-                .join('\n');
+            let text = 'Natal House Cusps:\n';
+            for (const [house, cusp] of Object.entries(currentResults.natal_house_cusps)) {
+                text += `${house}: ${cusp}°\n`;
+            }
             
-            const allData = `House Cusps (${houseSystem} System):\n${houseCusps}`;
+            copyToClipboard(text.trim());
+        }
+        
+        function copyTransitPlanets() {
+            if (!currentResults) return;
             
-            copyToClipboard(allData);
+            let text = 'Transit Planets:\n';
+            for (const [planet, longitude] of Object.entries(currentResults.transit_planets)) {
+                text += `${planet}: ${longitude}°\n`;
+            }
+            
+            copyToClipboard(text.trim());
+        }
+        
+        function copyTransitHouseCusps() {
+            if (!currentResults) return;
+            
+            let text = 'Transit House Cusps:\n';
+            for (const [house, cusp] of Object.entries(currentResults.transit_house_cusps)) {
+                text += `${house}: ${cusp}°\n`;
+            }
+            
+            copyToClipboard(text.trim());
         }
 
         function showSuccessMessage(message) {

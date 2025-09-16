@@ -189,6 +189,19 @@ class APIKeyRequest(BaseModel):
 class DomainRequest(BaseModel):
     domain: str
 
+class NatalTransitRequest(BaseModel):
+    year: int
+    month: int
+    day: int
+    hour: int
+    minute: int = 0
+    second: int = 0
+    lat: float
+    lon: float
+    tz: str = 'UTC'
+    ayanamsha: str = 'lahiri'
+    house_system: str = 'placidus'
+
 # Utility functions
 def decimal_to_dms(decimal_degrees):
     """Convert decimal degrees to degrees, minutes, seconds format"""
@@ -698,6 +711,94 @@ async def calculate_chart_internal(
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+@app.post("/chart/natal-transit")
+async def calculate_natal_transit(
+    request: Request,
+    chart_data: NatalTransitRequest,
+    _: bool = Depends(verify_access)
+):
+    """Calculate both natal and transit charts"""
+    try:
+        # Calculate natal chart with provided birth details
+        natal_result = await calculate_chart_internal(
+            chart_data.year, chart_data.month, chart_data.day, 
+            chart_data.hour, chart_data.minute, chart_data.second,
+            chart_data.lat, chart_data.lon, 
+            chart_data.tz, chart_data.ayanamsha, chart_data.house_system
+        )
+        
+        # Get current date and time for transit chart in user's timezone
+        user_tz = pytz.timezone(chart_data.tz)
+        now_utc = datetime.now(pytz.UTC)
+        now_local = now_utc.astimezone(user_tz)
+        
+        # Calculate transit chart with current date/time but same location
+        transit_result = await calculate_chart_internal(
+            now_local.year, now_local.month, now_local.day,
+            now_local.hour, now_local.minute, now_local.second,
+            chart_data.lat, chart_data.lon,
+            chart_data.tz, chart_data.ayanamsha, chart_data.house_system
+        )
+        
+        # Extract natal data from the JSONResponse
+        natal_data = json.loads(bytes(natal_result.body).decode())
+        transit_data = json.loads(bytes(transit_result.body).decode())
+        
+        # Structure the response for 4-column display + other details
+        response_data = {
+            # Other details (full row)
+            "other_details": {
+                "natal_julian_day": natal_data["julian_day_ut"],
+                "transit_julian_day": transit_data["julian_day_ut"],
+                "ayanamsha_name": natal_data["ayanamsha_name"],
+                "ayanamsha_value_natal": natal_data["ayanamsha_value_decimal"],
+                "ayanamsha_value_transit": transit_data["ayanamsha_value_decimal"],
+                "house_system_used": natal_data["house_system_used"],
+                "timezone_used": natal_data["timezone_used"],
+                "natal_input_time_ut": natal_data["input_time_ut"],
+                "transit_input_time_ut": transit_data["input_time_ut"]
+            },
+            
+            # Column 1: Natal Planets (including Ascendant)
+            "natal_planets": {
+                "Ascendant": natal_data["ascendant_full_precision"]
+            },
+            
+            # Column 2: Natal House Cusps
+            "natal_house_cusps": {},
+            
+            # Column 3: Transit Planets (including Ascendant)
+            "transit_planets": {
+                "Ascendant": transit_data["ascendant_full_precision"]
+            },
+            
+            # Column 4: Transit House Cusps
+            "transit_house_cusps": {}
+        }
+        
+        # Add natal planets
+        if "planets_full_precision" in natal_data:
+            response_data["natal_planets"].update(natal_data["planets_full_precision"])
+        
+        # Add transit planets
+        if "planets_full_precision" in transit_data:
+            response_data["transit_planets"].update(transit_data["planets_full_precision"])
+            
+        # Add natal house cusps
+        if "house_cusps" in natal_data:
+            for i, cusp in enumerate(natal_data["house_cusps"]):
+                response_data["natal_house_cusps"][f"House {i + 1}"] = cusp
+                
+        # Add transit house cusps
+        if "house_cusps" in transit_data:
+            for i, cusp in enumerate(transit_data["house_cusps"]):
+                response_data["transit_house_cusps"][f"House {i + 1}"] = cusp
+        
+        return JSONResponse(content=response_data)
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error calculating natal-transit charts: {str(e)}")
 
 def verify_admin_session(request: Request):
     """Verify admin session token with timeout validation"""
