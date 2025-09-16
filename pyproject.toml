@@ -6,5 +6,6 @@ requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.116.1",
     "pyswisseph>=2.10.3.2",
+    "pytz>=2025.2",
     "uvicorn>=0.35.0",
 ]
