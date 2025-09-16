@@ -96,14 +96,9 @@
 <body>
     <div class="login-form" id="loginForm">
         <h2>Admin Login</h2>
-        <div style="background: #e3f2fd; padding: 10px; border-radius: 5px; margin-bottom: 15px; font-size: 14px; text-align: center;">
-            <strong>Default Credentials:</strong><br>
-            Username: <code>admin</code><br>
-            Password: <code>Admin123</code>
-        </div>
         <form onsubmit="adminLogin(event)">
-            <input type="text" id="username" placeholder="Username" value="admin" required>
-            <input type="password" id="password" placeholder="Password" value="Admin123" required>
+            <input type="text" id="username" placeholder="Username" required>
+            <input type="password" id="password" placeholder="Password" required>
             <button type="submit">Login</button>
         </form>
         <div id="loginMessage"></div>
@@ -129,6 +124,17 @@
                 <button type="submit">Add Domain</button>
             </form>
             <div id="domainsList"></div>
+        </div>
+        
+        <div class="section">
+            <h3>Change Password</h3>
+            <form onsubmit="changePassword(event)">
+                <input type="password" id="currentPassword" placeholder="Current Password" required>
+                <input type="password" id="newPassword" placeholder="New Password (min 8 chars, 1 digit, 1 uppercase)" required>
+                <input type="password" id="confirmPassword" placeholder="Confirm New Password" required>
+                <button type="submit">Change Password</button>
+            </form>
+            <div id="passwordChangeMessage"></div>
         </div>
         
         <button onclick="logout()">Logout</button>
@@ -231,15 +237,15 @@
                 title.textContent = 'Authorized Domains:';
                 domainsList.appendChild(title);
                 
-                data.domains.forEach(domain => {
+                data.domains.forEach(domainObj => {
                     const domainDiv = document.createElement('div');
-                    const domainText = document.createTextNode(domain + ' ');
+                    const domainText = document.createTextNode(domainObj.domain + ' ');
                     domainDiv.appendChild(domainText);
                     
                     const deleteBtn = document.createElement('button');
                     deleteBtn.textContent = 'Delete';
                     deleteBtn.style.backgroundColor = '#f44336';
-                    deleteBtn.onclick = () => deleteDomain(domain);
+                    deleteBtn.onclick = () => deleteDomain(domainObj.domain);
                     domainDiv.appendChild(deleteBtn);
                     
                     domainsList.appendChild(domainDiv);
@@ -325,6 +331,46 @@
             }
         }
         
+        async function changePassword(event) {
+            event.preventDefault();
+            const currentPassword = document.getElementById('currentPassword').value;
+            const newPassword = document.getElementById('newPassword').value;
+            const confirmPassword = document.getElementById('confirmPassword').value;
+            
+            // Validate passwords match
+            if (newPassword !== confirmPassword) {
+                document.getElementById('passwordChangeMessage').innerHTML = '<div class="error">New passwords do not match</div>';
+                return;
+            }
+            
+            try {
+                const response = await fetch('/admin/password-change', {
+                    method: 'POST',
+                    headers: { 
+                        'Content-Type': 'application/json',
+                        'Authorization': 'Bearer ' + sessionToken
+                    },
+                    body: JSON.stringify({ 
+                        current_password: currentPassword, 
+                        new_password: newPassword 
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    document.getElementById('passwordChangeMessage').innerHTML = '<div class="success">' + data.message + '</div>';
+                    document.getElementById('currentPassword').value = '';
+                    document.getElementById('newPassword').value = '';
+                    document.getElementById('confirmPassword').value = '';
+                } else {
+                    document.getElementById('passwordChangeMessage').innerHTML = '<div class="error">' + data.detail + '</div>';
+                }
+            } catch (error) {
+                document.getElementById('passwordChangeMessage').innerHTML = '<div class="error">Failed to change password</div>';
+            }
+        }
+
         function logout() {
             localStorage.removeItem('adminToken');
             location.reload();
