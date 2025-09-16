@@ -189,18 +189,6 @@ class APIKeyRequest(BaseModel):
 class DomainRequest(BaseModel):
     domain: str
 
-class NatalTransitRequest(BaseModel):
-    year: int
-    month: int
-    day: int
-    hour: int
-    minute: int = 0
-    second: int = 0
-    lat: float
-    lon: float
-    tz: str = 'UTC'
-    ayanamsha: str = 'lahiri'
-    house_system: str = 'placidus'
 
 # Utility functions
 def decimal_to_dms(decimal_degrees):
@@ -577,8 +565,12 @@ async def calculate_chart_get(
     house_system: str = 'placidus',
     _: bool = Depends(verify_access)
 ):
-    """GET endpoint for chart calculation"""
-    return await calculate_chart_internal(year, month, day, hour, minute, second, lat, lon, tz, ayanamsha, house_system)
+    """GET endpoint for chart calculation with natal and transit data"""
+    result = await build_natal_transit_response(
+        year, month, day, hour, minute, second,
+        lat, lon, tz, ayanamsha, house_system
+    )
+    return JSONResponse(content=result)
 
 @app.post("/chart")
 async def calculate_chart_post(
@@ -586,13 +578,14 @@ async def calculate_chart_post(
     chart_data: ChartRequest,
     _: bool = Depends(verify_access)
 ):
-    """POST endpoint for chart calculation"""
-    return await calculate_chart_internal(
+    """POST endpoint for chart calculation with natal and transit data"""
+    result = await build_natal_transit_response(
         chart_data.year, chart_data.month, chart_data.day, 
         chart_data.hour, chart_data.minute, chart_data.second,
         chart_data.lat, chart_data.lon, 
         chart_data.tz, chart_data.ayanamsha, chart_data.house_system
     )
+    return JSONResponse(content=result)
 
 async def calculate_chart_internal(
     year: int,
@@ -712,42 +705,55 @@ async def calculate_chart_internal(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
-@app.post("/chart/natal-transit")
-async def calculate_natal_transit(
-    request: Request,
-    chart_data: NatalTransitRequest,
-    _: bool = Depends(verify_access)
+async def build_natal_transit_response(
+    year: int, month: int, day: int, hour: int, minute: int, second: int,
+    lat: float, lon: float, tz: str, ayanamsha: str, house_system: str
 ):
-    """Calculate both natal and transit charts"""
+    """Build combined natal and transit response"""
     try:
-        # Calculate natal chart with provided birth details
+        # Calculate natal chart
         natal_result = await calculate_chart_internal(
-            chart_data.year, chart_data.month, chart_data.day, 
-            chart_data.hour, chart_data.minute, chart_data.second,
-            chart_data.lat, chart_data.lon, 
-            chart_data.tz, chart_data.ayanamsha, chart_data.house_system
+            year, month, day, hour, minute, second,
+            lat, lon, tz, ayanamsha, house_system
         )
         
+        # Extract natal data from JSONResponse
+        natal_data = json.loads(bytes(natal_result.body).decode())
+        
         # Get current date and time for transit chart in user's timezone
-        user_tz = pytz.timezone(chart_data.tz)
+        user_tz = pytz.timezone(tz)
         now_utc = datetime.now(pytz.UTC)
         now_local = now_utc.astimezone(user_tz)
         
-        # Calculate transit chart with current date/time but same location
+        # Calculate transit chart
         transit_result = await calculate_chart_internal(
             now_local.year, now_local.month, now_local.day,
             now_local.hour, now_local.minute, now_local.second,
-            chart_data.lat, chart_data.lon,
-            chart_data.tz, chart_data.ayanamsha, chart_data.house_system
+            lat, lon, tz, ayanamsha, house_system
         )
         
-        # Extract natal data from the JSONResponse
-        natal_data = json.loads(bytes(natal_result.body).decode())
+        # Extract transit data from JSONResponse
         transit_data = json.loads(bytes(transit_result.body).decode())
         
-        # Structure the response for 4-column display + other details
+        # Structure the combined response
         response_data = {
-            # Other details (full row)
+            # Original natal chart data (backward compatibility)
+            **natal_data,
+            
+            # Transit data
+            "transit_julian_day_ut": transit_data["julian_day_ut"],
+            "transit_ascendant_deg": transit_data["ascendant_deg"],
+            "transit_ascendant_full_precision": transit_data["ascendant_full_precision"],
+            "transit_planets_deg": transit_data["planets_deg"],
+            "transit_planets_full_precision": transit_data["planets_full_precision"],
+            "transit_house_cusps": transit_data["house_cusps"],
+            "transit_ayanamsha_value_decimal": transit_data["ayanamsha_value_decimal"],
+            "transit_ayanamsha_value_dms": transit_data["ayanamsha_value_dms"],
+            "transit_input_time_ut": transit_data["input_time_ut"],
+            "transit_date": f"{now_local.year}-{now_local.month:02d}-{now_local.day:02d}",
+            "transit_time": f"{now_local.hour:02d}:{now_local.minute:02d}:{now_local.second:02d}",
+            
+            # 4-column display data
             "other_details": {
                 "natal_julian_day": natal_data["julian_day_ut"],
                 "transit_julian_day": transit_data["julian_day_ut"],
@@ -757,45 +763,18 @@ async def calculate_natal_transit(
                 "house_system_used": natal_data["house_system_used"],
                 "timezone_used": natal_data["timezone_used"],
                 "natal_input_time_ut": natal_data["input_time_ut"],
-                "transit_input_time_ut": transit_data["input_time_ut"]
+                "transit_input_time_ut": transit_data["input_time_ut"],
+                "transit_date": f"{now_local.year}-{now_local.month:02d}-{now_local.day:02d}",
+                "transit_time": f"{now_local.hour:02d}:{now_local.minute:02d}:{now_local.second:02d}"
             },
             
-            # Column 1: Natal Planets (including Ascendant)
-            "natal_planets": {
-                "Ascendant": natal_data["ascendant_full_precision"]
-            },
-            
-            # Column 2: Natal House Cusps
-            "natal_house_cusps": {},
-            
-            # Column 3: Transit Planets (including Ascendant)
-            "transit_planets": {
-                "Ascendant": transit_data["ascendant_full_precision"]
-            },
-            
-            # Column 4: Transit House Cusps
-            "transit_house_cusps": {}
+            "natal_planets": dict(Ascendant=natal_data["ascendant_full_precision"], **natal_data["planets_full_precision"]),
+            "natal_house_cusps": {f"House {i + 1}": cusp for i, cusp in enumerate(natal_data["house_cusps"])},
+            "transit_planets": dict(Ascendant=transit_data["ascendant_full_precision"], **transit_data["planets_full_precision"]),
+            "transit_house_cusps": {f"House {i + 1}": cusp for i, cusp in enumerate(transit_data["house_cusps"])}
         }
         
-        # Add natal planets
-        if "planets_full_precision" in natal_data:
-            response_data["natal_planets"].update(natal_data["planets_full_precision"])
-        
-        # Add transit planets
-        if "planets_full_precision" in transit_data:
-            response_data["transit_planets"].update(transit_data["planets_full_precision"])
-            
-        # Add natal house cusps
-        if "house_cusps" in natal_data:
-            for i, cusp in enumerate(natal_data["house_cusps"]):
-                response_data["natal_house_cusps"][f"House {i + 1}"] = cusp
-                
-        # Add transit house cusps
-        if "house_cusps" in transit_data:
-            for i, cusp in enumerate(transit_data["house_cusps"]):
-                response_data["transit_house_cusps"][f"House {i + 1}"] = cusp
-        
-        return JSONResponse(content=response_data)
+        return response_data
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error calculating natal-transit charts: {str(e)}")

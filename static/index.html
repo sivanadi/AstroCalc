@@ -492,8 +492,8 @@
             document.getElementById('error').style.display = 'none';
             
             try {
-                // Try POST to natal-transit endpoint
-                let response = await fetch('/chart/natal-transit', {
+                // Try POST to chart endpoint
+                let response = await fetch('/chart', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -508,8 +508,21 @@
                 const result = await response.json();
                 currentResults = result;
                 
-                // Create API URL for reference
-                currentApiUrl = `${window.location.origin}/chart/natal-transit`;
+                // Create GET URL for API reference
+                const params = new URLSearchParams({
+                    year: requestData.year,
+                    month: requestData.month,
+                    day: requestData.day,
+                    hour: requestData.hour,
+                    minute: requestData.minute,
+                    second: requestData.second,
+                    lat: requestData.lat,
+                    lon: requestData.lon,
+                    tz: requestData.tz,
+                    ayanamsha: requestData.ayanamsha,
+                    house_system: requestData.house_system
+                });
+                currentApiUrl = `${window.location.origin}/chart?${params.toString()}`;
                 
                 displayResults(result);
                 
