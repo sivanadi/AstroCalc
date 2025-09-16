@@ -417,7 +417,7 @@ async def admin_page():
                         
                         let html = '<h4>Existing API Keys:</h4>';
                         for (let key in data.api_keys) {
-                            html += '<div>' + data.api_keys[key].name + ' - ' + key + ' <button onclick="deleteApiKey(\''+key+'\')" style="background-color: #f44336;">Delete</button></div>';
+                            html += '<div>' + data.api_keys[key].name + ' - ' + key + ' <button onclick="deleteApiKey(\'' + key + '\')" style="background-color: #f44336;">Delete</button></div>';
                         }
                         document.getElementById('apiKeysList').innerHTML = html;
                     } catch (error) {
@@ -434,7 +434,7 @@ async def admin_page():
                         
                         let html = '<h4>Authorized Domains:</h4>';
                         data.domains.forEach(domain => {
-                            html += '<div>' + domain + ' <button onclick="deleteDomain(\''+domain+'\')" style="background-color: #f44336;">Delete</button></div>';
+                            html += '<div>' + domain + ' <button onclick="deleteDomain(\'' + domain + '\')" style="background-color: #f44336;">Delete</button></div>';
                         });
                         document.getElementById('domainsList').innerHTML = html;
                     } catch (error) {
