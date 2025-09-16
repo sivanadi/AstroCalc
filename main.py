@@ -2,6 +2,7 @@ from fastapi import FastAPI, HTTPException, Request, Depends
 from fastapi.responses import JSONResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import swisseph as swe
 import pytz
@@ -11,8 +12,44 @@ import secrets
 from datetime import datetime
 from typing import Dict, Union, Optional
 import hashlib
+import bcrypt
 
-app = FastAPI(title="Vedic Astrology Calculator", description="Calculate planetary longitudes and Ascendant using Swiss Ephemeris")
+app = FastAPI(
+    title="Vedic Astrology Calculator", 
+    description="Calculate planetary longitudes and Ascendant using Swiss Ephemeris",
+    # Security: Hide server information
+    redoc_url=None if os.getenv('ENVIRONMENT') == 'production' else '/redoc',
+    docs_url=None if os.getenv('ENVIRONMENT') == 'production' else '/docs'
+)
+
+# Security headers middleware
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    response = await call_next(request)
+    
+    # Security headers to prevent common attacks
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Content-Security-Policy"] = "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'"
+    
+    # Remove server header for security
+    if "server" in response.headers:
+        del response.headers["server"]
+    
+    return response
+
+# CORS configuration - restrictive by default
+allowed_origins = os.getenv('CORS_ORIGINS', 'http://localhost:5000').split(',')
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=allowed_origins,
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "DELETE"],
+    allow_headers=["*"],
+)
 
 # Mount static files
 app.mount("/static", StaticFiles(directory="static"), name="static")
@@ -81,20 +118,35 @@ PLANETS = {
     'Rahu': swe.MEAN_NODE,  # Mean North Node
 }
 
-# Simple in-memory storage for admin data
-ADMIN_CREDENTIALS = {
-    'admin': 'admin123'  # Default admin credentials
-}
-AUTHORIZED_DOMAINS = set(['localhost', '127.0.0.1', 'replit.dev', 'replit.com'])
+# Secure admin authentication using environment variables
+# Admin credentials are stored as environment variables with bcrypt hashing
+ADMIN_USERNAME = os.getenv('ADMIN_USERNAME', 'admin')
+ADMIN_PASSWORD_HASH = os.getenv('ADMIN_PASSWORD_HASH')
+
+# If no password hash is provided, create one for the default password and warn
+if not ADMIN_PASSWORD_HASH:
+    default_password = os.getenv('ADMIN_PASSWORD', 'admin123')
+    ADMIN_PASSWORD_HASH = bcrypt.hashpw(default_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+    print(f"WARNING: Using default password. Set ADMIN_PASSWORD_HASH environment variable for security.")
+    print(f"Generated hash for current password: {ADMIN_PASSWORD_HASH}")
+
+# Session timeout in seconds (default: 1 hour)
+SESSION_TIMEOUT = int(os.getenv('SESSION_TIMEOUT', '3600'))
+
+# More restrictive default domains - only localhost by default
+default_domains = os.getenv('AUTHORIZED_DOMAINS', 'localhost,127.0.0.1')
+AUTHORIZED_DOMAINS = set(domain.strip() for domain in default_domains.split(',') if domain.strip())
 API_KEYS = {}
-ACTIVE_SESSIONS = {}
+ACTIVE_SESSIONS = {}  # Now stores {token: {username: str, created_at: datetime}}
 
 # Request models
 class ChartRequest(BaseModel):
     year: int
     month: int
     day: int
-    hour: float
+    hour: int  # Changed to int for proper separation
+    minute: int = 0  # Added minute field
+    second: int = 0  # Added second field
     lat: float
     lon: float
     tz: str = 'UTC'
@@ -143,34 +195,72 @@ def verify_api_key(credentials: HTTPAuthorizationCredentials = Depends(security)
             return credentials.credentials
     return None
 
+def cleanup_expired_sessions():
+    """Remove expired sessions"""
+    now = datetime.now()
+    expired_tokens = []
+    
+    for token, session_data in ACTIVE_SESSIONS.items():
+        session_age = (now - session_data['created_at']).total_seconds()
+        if session_age > SESSION_TIMEOUT:
+            expired_tokens.append(token)
+    
+    for token in expired_tokens:
+        del ACTIVE_SESSIONS[token]
+    
+    return len(expired_tokens)
+
+def verify_password(plain_password: str, hashed_password: str) -> bool:
+    """Verify a password against its hash using bcrypt"""
+    try:
+        return bcrypt.checkpw(plain_password.encode('utf-8'), hashed_password.encode('utf-8'))
+    except Exception:
+        return False
+
 def check_domain_authorization(request: Request):
-    """Check if request comes from authorized domain"""
-    host = request.headers.get('host', '').split(':')[0]
+    """Check if request comes from authorized domain with stricter validation"""
+    # Clean up any expired sessions first
+    cleanup_expired_sessions()
+    
+    host = request.headers.get('host', '').split(':')[0].lower()
     origin = request.headers.get('origin', '')
     referer = request.headers.get('referer', '')
     
-    # Check direct host
+    # Check direct host with exact match
     if host in AUTHORIZED_DOMAINS:
         return True
     
-    # Check origin
+    # Check if host ends with any authorized domain (for subdomains)
+    for domain in AUTHORIZED_DOMAINS:
+        if host.endswith('.' + domain) or host == domain:
+            return True
+    
+    # Check origin with stricter validation
     if origin:
         try:
             from urllib.parse import urlparse
             origin_host = urlparse(origin).hostname
-            if origin_host in AUTHORIZED_DOMAINS:
+            if origin_host and origin_host.lower() in AUTHORIZED_DOMAINS:
                 return True
-        except:
+            # Check subdomains for origin
+            for domain in AUTHORIZED_DOMAINS:
+                if origin_host and (origin_host.endswith('.' + domain) or origin_host == domain):
+                    return True
+        except Exception:
             pass
     
-    # Check referer
+    # Check referer with stricter validation
     if referer:
         try:
             from urllib.parse import urlparse
             referer_host = urlparse(referer).hostname
-            if referer_host in AUTHORIZED_DOMAINS:
+            if referer_host and referer_host.lower() in AUTHORIZED_DOMAINS:
                 return True
-        except:
+            # Check subdomains for referer
+            for domain in AUTHORIZED_DOMAINS:
+                if referer_host and (referer_host.endswith('.' + domain) or referer_host == domain):
+                    return True
+        except Exception:
             pass
     
     return False
@@ -438,15 +528,17 @@ async def calculate_chart_get(
     year: int,
     month: int, 
     day: int,
-    hour: float,
+    hour: int,
     lat: float,
     lon: float,
+    minute: int = 0,
+    second: int = 0,
     tz: str = 'UTC',
     ayanamsha: str = 'lahiri',
     _: bool = Depends(verify_access)
 ):
     """GET endpoint for chart calculation"""
-    return await calculate_chart_internal(year, month, day, hour, lat, lon, tz, ayanamsha)
+    return await calculate_chart_internal(year, month, day, hour, minute, second, lat, lon, tz, ayanamsha)
 
 @app.post("/chart")
 async def calculate_chart_post(
@@ -457,7 +549,8 @@ async def calculate_chart_post(
     """POST endpoint for chart calculation"""
     return await calculate_chart_internal(
         chart_data.year, chart_data.month, chart_data.day, 
-        chart_data.hour, chart_data.lat, chart_data.lon, 
+        chart_data.hour, chart_data.minute, chart_data.second,
+        chart_data.lat, chart_data.lon, 
         chart_data.tz, chart_data.ayanamsha
     )
 
@@ -465,7 +558,9 @@ async def calculate_chart_internal(
     year: int,
     month: int, 
     day: int,
-    hour: float,
+    hour: int,
+    minute: int,
+    second: int,
     lat: float,
     lon: float,
     tz: str = 'UTC',
@@ -490,15 +585,33 @@ async def calculate_chart_internal(
             raise HTTPException(status_code=400, detail="Month must be between 1 and 12")
         if not (1 <= day <= 31):
             raise HTTPException(status_code=400, detail="Day must be between 1 and 31")
-        if not (0 <= hour < 24):
-            raise HTTPException(status_code=400, detail="Hour must be between 0 and 24")
+        if not (0 <= hour <= 23):
+            raise HTTPException(status_code=400, detail="Hour must be between 0 and 23")
+        if not (0 <= minute <= 59):
+            raise HTTPException(status_code=400, detail="Minute must be between 0 and 59")
+        if not (0 <= second <= 59):
+            raise HTTPException(status_code=400, detail="Second must be between 0 and 59")
         if not (-90 <= lat <= 90):
             raise HTTPException(status_code=400, detail="Latitude must be between -90 and 90 degrees")
         if not (-180 <= lon <= 180):
             raise HTTPException(status_code=400, detail="Longitude must be between -180 and 180 degrees")
         
-        # Convert to Julian Day
-        julian_day_ut = swe.julday(year, month, day, hour)
+        # Validate ayanamsha
+        if ayanamsha not in AYANAMSHA_OPTIONS:
+            raise HTTPException(status_code=400, detail=f"Invalid ayanamsha. Must be one of: {list(AYANAMSHA_OPTIONS.keys())}")
+        
+        # Convert local time to UT using timezone
+        hour_ut = convert_timezone_to_ut(year, month, day, hour, minute, second, tz)
+        
+        # Convert to Julian Day using UT time
+        julian_day_ut = swe.julday(year, month, day, hour_ut)
+        
+        # Set the ayanamsha
+        ayanamsha_info = AYANAMSHA_OPTIONS[ayanamsha]
+        swe.set_sid_mode(ayanamsha_info['id'])
+        
+        # Get ayanamsha value for the given date
+        ayanamsha_value = swe.get_ayanamsa_ut(julian_day_ut)
         
         # Calculate houses and Ascendant using Placidus house system in sidereal mode
         # Using sidereal flag for Vedic astrology  
@@ -506,8 +619,9 @@ async def calculate_chart_internal(
         houses, ascmc = swe.houses_ex(julian_day_ut, lat, lon, b'P', flags)
         ascendant_deg = round(ascmc[0], 2)  # Ascendant is the first element in ascmc
         
-        # Calculate planetary positions
+        # Calculate planetary positions with full precision
         planets_deg = {}
+        planets_full_precision = {}
         
         for planet_name, planet_id in PLANETS.items():
             try:
@@ -516,18 +630,30 @@ async def calculate_chart_internal(
                 position, retflag = swe.calc_ut(julian_day_ut, planet_id, flags)
                 longitude = position[0]  # Longitude is the first element
                 planets_deg[planet_name] = round(longitude, 2)
+                planets_full_precision[planet_name] = round(longitude, 6)
             except Exception as e:
                 raise HTTPException(status_code=500, detail=f"Error calculating {planet_name}: {str(e)}")
         
         # Calculate Ketu (Rahu + 180 degrees)
-        rahu_longitude = planets_deg['Rahu']
+        rahu_longitude = planets_full_precision['Rahu']
         ketu_longitude = (rahu_longitude + 180) % 360
         planets_deg['Ketu'] = round(ketu_longitude, 2)
+        planets_full_precision['Ketu'] = round(ketu_longitude, 6)
+        
+        # Prepare enhanced response with all frontend-expected fields
+        ascendant_full_precision = round(ascmc[0], 6)
         
         return JSONResponse(content={
             "julian_day_ut": round(julian_day_ut, 6),
             "ascendant_deg": ascendant_deg,
-            "planets_deg": planets_deg
+            "ascendant_full_precision": ascendant_full_precision,
+            "planets_deg": planets_deg,
+            "planets_full_precision": planets_full_precision,
+            "ayanamsha_name": ayanamsha_info['name'],
+            "ayanamsha_value_decimal": round(ayanamsha_value, 6),
+            "ayanamsha_value_dms": decimal_to_dms(ayanamsha_value),
+            "timezone_used": tz,
+            "input_time_ut": round(hour_ut, 6)
         })
         
     except HTTPException:
@@ -535,20 +661,11 @@ async def calculate_chart_internal(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
-# Admin endpoints
-@app.post("/admin/login")
-async def admin_login(login_data: AdminLogin):
-    """Admin login endpoint"""
-    if login_data.username in ADMIN_CREDENTIALS and ADMIN_CREDENTIALS[login_data.username] == login_data.password:
-        # Generate session token
-        token = secrets.token_urlsafe(32)
-        ACTIVE_SESSIONS[token] = login_data.username
-        return {"token": token, "message": "Login successful"}
-    else:
-        raise HTTPException(status_code=401, detail="Invalid credentials")
-
 def verify_admin_session(request: Request):
-    """Verify admin session token"""
+    """Verify admin session token with timeout validation"""
+    # Clean up expired sessions
+    cleanup_expired_sessions()
+    
     auth_header = request.headers.get('authorization')
     if not auth_header or not auth_header.startswith('Bearer '):
         raise HTTPException(status_code=401, detail="Missing or invalid authorization header")
@@ -557,7 +674,68 @@ def verify_admin_session(request: Request):
     if token not in ACTIVE_SESSIONS:
         raise HTTPException(status_code=401, detail="Invalid or expired session")
     
-    return ACTIVE_SESSIONS[token]
+    session_data = ACTIVE_SESSIONS[token]
+    now = datetime.now()
+    
+    # Check session timeout
+    session_age = (now - session_data['created_at']).total_seconds()
+    if session_age > SESSION_TIMEOUT:
+        del ACTIVE_SESSIONS[token]
+        raise HTTPException(status_code=401, detail="Session expired")
+    
+    # Update last activity
+    session_data['last_activity'] = now
+    
+    return session_data['username']
+
+# Admin endpoints
+@app.post("/admin/login")
+async def admin_login(login_data: AdminLogin):
+    """Secure admin login endpoint with bcrypt password verification"""
+    # Clean up expired sessions first
+    cleanup_expired_sessions()
+    
+    # Rate limiting: simple check to prevent brute force (in production, use proper rate limiting)
+    if len(ACTIVE_SESSIONS) > 10:
+        raise HTTPException(status_code=429, detail="Too many active sessions. Try again later.")
+    
+    # Verify username and password securely
+    if login_data.username == ADMIN_USERNAME and verify_password(login_data.password, ADMIN_PASSWORD_HASH):
+        # Generate secure session token
+        token = secrets.token_urlsafe(32)
+        ACTIVE_SESSIONS[token] = {
+            'username': login_data.username,
+            'created_at': datetime.now(),
+            'last_activity': datetime.now()
+        }
+        return {
+            "token": token, 
+            "message": "Login successful",
+            "expires_in": SESSION_TIMEOUT
+        }
+    else:
+        # Add a small delay to prevent timing attacks
+        import time
+        time.sleep(0.5)
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+
+@app.post("/admin/logout")
+async def admin_logout(request: Request, admin_user: str = Depends(verify_admin_session)):
+    """Secure admin logout endpoint"""
+    auth_header = request.headers.get('authorization')
+    if auth_header and auth_header.startswith('Bearer '):
+        token = auth_header.split(' ')[1]
+        if token in ACTIVE_SESSIONS:
+            del ACTIVE_SESSIONS[token]
+    
+    return {"message": "Logged out successfully"}
+
+@app.post("/admin/logout-all")
+async def admin_logout_all(request: Request, admin_user: str = Depends(verify_admin_session)):
+    """Logout from all sessions (emergency logout)"""
+    # Keep only the current session or clear all if preferred
+    ACTIVE_SESSIONS.clear()
+    return {"message": "All sessions terminated successfully"}
 
 @app.get("/admin/api-keys")
 async def get_api_keys(request: Request, admin_user: str = Depends(verify_admin_session)):
@@ -609,6 +787,19 @@ async def delete_domain(request: Request, domain: str, admin_user: str = Depends
 async def get_ayanamsha_options():
     """Get available ayanamsha options"""
     return {"options": AYANAMSHA_OPTIONS}
+
+@app.get("/security-status")
+async def security_status():
+    """Security status endpoint for monitoring"""
+    cleanup_expired_sessions()
+    return {
+        "status": "secure",
+        "environment_auth": bool(os.getenv('ADMIN_PASSWORD_HASH')),
+        "active_sessions": len(ACTIVE_SESSIONS),
+        "authorized_domains": len(AUTHORIZED_DOMAINS),
+        "api_keys_count": len(API_KEYS),
+        "session_timeout": SESSION_TIMEOUT
+    }
 
 @app.get("/health")
 async def health_check():

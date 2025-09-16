@@ -4,6 +4,7 @@ expertMode = true
 
 [nix]
 channel = "stable-25_05"
+packages = ["cargo", "libiconv", "rustc"]
 
 [workflows]
 runButton = "Project"
@@ -32,7 +33,3 @@ outputType = "webview"
 [[ports]]
 localPort = 5000
 externalPort = 80
-
-[[ports]]
-localPort = 38937
-externalPort = 3000
