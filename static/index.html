@@ -334,12 +334,21 @@
                         <label for="timezone">Timezone:</label>
                         <select id="timezone" name="timezone">
                             <option value="UTC">UTC</option>
-                            <option value="Asia/Kolkata">Asia/Kolkata (IST)</option>
-                            <option value="America/New_York">America/New_York (EST/EDT)</option>
-                            <option value="America/Los_Angeles">America/Los_Angeles (PST/PDT)</option>
-                            <option value="Europe/London">Europe/London (GMT/BST)</option>
-                            <option value="Asia/Tokyo">Asia/Tokyo (JST)</option>
-                            <option value="Australia/Sydney">Australia/Sydney (AEST/AEDT)</option>
+                            <option value="Asia/Kolkata">Asia/Kolkata (IST +5:30)</option>
+                            <option value="America/New_York">America/New_York (EST/EDT -5/-4)</option>
+                            <option value="America/Los_Angeles">America/Los_Angeles (PST/PDT -8/-7)</option>
+                            <option value="America/Chicago">America/Chicago (CST/CDT -6/-5)</option>
+                            <option value="America/Denver">America/Denver (MST/MDT -7/-6)</option>
+                            <option value="Europe/London">Europe/London (GMT/BST +0/+1)</option>
+                            <option value="Europe/Paris">Europe/Paris (CET/CEST +1/+2)</option>
+                            <option value="Europe/Berlin">Europe/Berlin (CET/CEST +1/+2)</option>
+                            <option value="Asia/Tokyo">Asia/Tokyo (JST +9)</option>
+                            <option value="Asia/Shanghai">Asia/Shanghai (CST +8)</option>
+                            <option value="Asia/Dubai">Asia/Dubai (GST +4)</option>
+                            <option value="Asia/Singapore">Asia/Singapore (SGT +8)</option>
+                            <option value="Australia/Sydney">Australia/Sydney (AEST/AEDT +10/+11)</option>
+                            <option value="Australia/Melbourne">Australia/Melbourne (AEST/AEDT +10/+11)</option>
+                            <option value="Pacific/Auckland">Pacific/Auckland (NZST/NZDT +12/+13)</option>
                         </select>
                     </div>
                     
@@ -354,6 +363,16 @@
                             <option value="true_citra">True Citra</option>
                             <option value="true_revati">True Revati</option>
                             <option value="true_pushya">True Pushya</option>
+                        </select>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="house_system">House System:</label>
+                        <select id="house_system" name="house_system">
+                            <option value="placidus">Placidus</option>
+                            <option value="equal">Equal House</option>
+                            <option value="topocentric">Topocentric</option>
+                            <option value="sripati">Sripati</option>
                         </select>
                     </div>
                 </div>
@@ -400,6 +419,15 @@
                         </li>
                     </ul>
                 </div>
+                
+                <div class="result-card">
+                    <div class="result-title">
+                        House Cusps
+                        <button onclick="copyHouseCusps()" class="btn-copy">Copy House Cusps</button>
+                    </div>
+                    <div id="houseSystemInfo" style="margin-bottom: 10px; font-size: 14px; color: #666;"></div>
+                    <ul id="houseCuspsList" class="planet-list"></ul>
+                </div>
             </div>
         </div>
     </div>
@@ -414,21 +442,18 @@
             const formData = new FormData(e.target);
             const data = Object.fromEntries(formData.entries());
             
-            // Convert hour to decimal UT
-            const hour = parseInt(data.hour);
-            const minute = parseInt(data.minute);
-            const second = parseInt(data.second);
-            const decimalHour = hour + minute/60 + second/3600;
-            
             const requestData = {
                 year: parseInt(data.year),
                 month: parseInt(data.month),
                 day: parseInt(data.day),
-                hour: decimalHour,
+                hour: parseInt(data.hour),
+                minute: parseInt(data.minute),
+                second: parseInt(data.second),
                 lat: parseFloat(data.lat),
                 lon: parseFloat(data.lon),
                 tz: data.timezone,
-                ayanamsha: data.ayanamsha
+                ayanamsha: data.ayanamsha,
+                house_system: data.house_system
             };
             
             // Show loading
@@ -459,10 +484,13 @@
                     month: requestData.month,
                     day: requestData.day,
                     hour: requestData.hour,
+                    minute: requestData.minute,
+                    second: requestData.second,
                     lat: requestData.lat,
                     lon: requestData.lon,
                     tz: requestData.tz,
-                    ayanamsha: requestData.ayanamsha
+                    ayanamsha: requestData.ayanamsha,
+                    house_system: requestData.house_system
                 });
                 currentApiUrl = `${window.location.origin}/chart?${params.toString()}`;
                 
@@ -515,6 +543,26 @@
                     <span class="planet-degree">${longitude}°</span>
                 `;
                 planetList.appendChild(li);
+            }
+            
+            // Display house cusps
+            const houseCuspsList = document.getElementById('houseCuspsList');
+            houseCuspsList.innerHTML = '';
+            
+            if (data.house_cusps && data.house_system_used) {
+                document.getElementById('houseSystemInfo').textContent = `Using ${data.house_system_used} House System`;
+                
+                const houseCusps = data.house_cusps;
+                for (let i = 0; i < houseCusps.length; i++) {
+                    const li = document.createElement('li');
+                    li.className = 'planet-item';
+                    
+                    li.innerHTML = `
+                        <span class="planet-name">House ${i + 1}</span>
+                        <span class="planet-degree">${houseCusps[i]}°</span>
+                    `;
+                    houseCuspsList.appendChild(li);
+                }
             }
             
             document.getElementById('results').style.display = 'block';
@@ -573,6 +621,19 @@ Input Time (UT): ${currentResults.input_time_ut || currentResults.hour || 'N/A'}
             copyToClipboard(allData);
         }
 
+        function copyHouseCusps() {
+            if (!currentResults || !currentResults.house_cusps) return;
+            
+            const houseSystem = currentResults.house_system_used || 'Unknown';
+            const houseCusps = currentResults.house_cusps
+                .map((cusp, index) => `House ${index + 1}: ${cusp}°`)
+                .join('\n');
+            
+            const allData = `House Cusps (${houseSystem} System):\n${houseCusps}`;
+            
+            copyToClipboard(allData);
+        }
+
         function showSuccessMessage(message) {
             const existingMsg = document.querySelector('.success');
             if (existingMsg) existingMsg.remove();
@@ -602,6 +663,7 @@ Input Time (UT): ${currentResults.input_time_ut || currentResults.hour || 'N/A'}
             document.getElementById('second').value = '0';
             document.getElementById('lat').value = '28.6139';
             document.getElementById('lon').value = '77.2090';
+            document.getElementById('house_system').value = 'placidus';
         }
 
         // Set current date as default

@@ -123,6 +123,21 @@ PLANETS = {
     'Rahu': swe.MEAN_NODE,  # Mean North Node
 }
 
+# House system options for Swiss Ephemeris
+HOUSE_SYSTEMS = {
+    'placidus': 'P',        # Placidus
+    'equal': 'E',           # Equal House
+    'topocentric': 'T',     # Topocentric (Poli)
+    'sripati': 'S'          # Sripati
+}
+
+HOUSE_SYSTEM_NAMES = {
+    'placidus': 'Placidus',
+    'equal': 'Equal House', 
+    'topocentric': 'Topocentric',
+    'sripati': 'Sripati'
+}
+
 # Secure admin authentication using environment variables
 # Admin credentials are stored as environment variables with bcrypt hashing
 ADMIN_USERNAME = os.getenv('ADMIN_USERNAME', 'admin')
@@ -161,6 +176,7 @@ class ChartRequest(BaseModel):
     lon: float
     tz: str = 'UTC'
     ayanamsha: str = 'lahiri'
+    house_system: str = 'placidus'
 
 class AdminLogin(BaseModel):
     username: str
@@ -545,10 +561,11 @@ async def calculate_chart_get(
     second: int = 0,
     tz: str = 'UTC',
     ayanamsha: str = 'lahiri',
+    house_system: str = 'placidus',
     _: bool = Depends(verify_access)
 ):
     """GET endpoint for chart calculation"""
-    return await calculate_chart_internal(year, month, day, hour, minute, second, lat, lon, tz, ayanamsha)
+    return await calculate_chart_internal(year, month, day, hour, minute, second, lat, lon, tz, ayanamsha, house_system)
 
 @app.post("/chart")
 async def calculate_chart_post(
@@ -561,7 +578,7 @@ async def calculate_chart_post(
         chart_data.year, chart_data.month, chart_data.day, 
         chart_data.hour, chart_data.minute, chart_data.second,
         chart_data.lat, chart_data.lon, 
-        chart_data.tz, chart_data.ayanamsha
+        chart_data.tz, chart_data.ayanamsha, chart_data.house_system
     )
 
 async def calculate_chart_internal(
@@ -574,7 +591,8 @@ async def calculate_chart_internal(
     lat: float,
     lon: float,
     tz: str = 'UTC',
-    ayanamsha: str = 'lahiri'
+    ayanamsha: str = 'lahiri',
+    house_system: str = 'placidus'
 ):
     """
     Calculate Vedic astrology chart with planetary longitudes and Ascendant.
@@ -610,6 +628,10 @@ async def calculate_chart_internal(
         if ayanamsha not in AYANAMSHA_OPTIONS:
             raise HTTPException(status_code=400, detail=f"Invalid ayanamsha. Must be one of: {list(AYANAMSHA_OPTIONS.keys())}")
         
+        # Validate house system
+        if house_system not in HOUSE_SYSTEMS:
+            raise HTTPException(status_code=400, detail=f"Invalid house system. Must be one of: {list(HOUSE_SYSTEMS.keys())}")
+        
         # Convert local time to UT using timezone
         hour_ut = convert_timezone_to_ut(year, month, day, hour, minute, second, tz)
         
@@ -623,11 +645,15 @@ async def calculate_chart_internal(
         # Get ayanamsha value for the given date
         ayanamsha_value = swe.get_ayanamsa_ut(julian_day_ut)
         
-        # Calculate houses and Ascendant using Placidus house system in sidereal mode
+        # Calculate houses and Ascendant using selected house system in sidereal mode
         # Using sidereal flag for Vedic astrology  
         flags = swe.FLG_SWIEPH | swe.FLG_SIDEREAL
-        houses, ascmc = swe.houses_ex(julian_day_ut, lat, lon, b'P', flags)
+        house_system_code = HOUSE_SYSTEMS[house_system].encode('ascii')
+        houses, ascmc = swe.houses_ex(julian_day_ut, lat, lon, house_system_code, flags)
         ascendant_deg = round(ascmc[0], 2)  # Ascendant is the first element in ascmc
+        
+        # Prepare house cusps with full precision
+        house_cusps = [round(house, 6) for house in houses[:12]]  # Only need first 12 houses
         
         # Calculate planetary positions with full precision
         planets_deg = {}
@@ -659,6 +685,8 @@ async def calculate_chart_internal(
             "ascendant_full_precision": ascendant_full_precision,
             "planets_deg": planets_deg,
             "planets_full_precision": planets_full_precision,
+            "house_cusps": house_cusps,
+            "house_system_used": HOUSE_SYSTEM_NAMES[house_system],
             "ayanamsha_name": ayanamsha_info['name'],
             "ayanamsha_value_decimal": round(ayanamsha_value, 6),
             "ayanamsha_value_dms": decimal_to_dms(ayanamsha_value),
