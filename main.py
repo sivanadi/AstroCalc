@@ -199,6 +199,29 @@ class PasswordChangeRequest(BaseModel):
     current_password: str
     new_password: str
 
+class UpdateAPIKeyLimitsRequest(BaseModel):
+    per_minute_limit: int = 60
+    per_day_limit: int = 1000
+    per_month_limit: int = 30000
+
+class UpdateDomainLimitsRequest(BaseModel):
+    per_minute_limit: int = 10
+    per_day_limit: int = 100
+    per_month_limit: int = 3000
+
+class CreateAPIKeyRequest(BaseModel):
+    name: str
+    description: Optional[str] = ''
+    per_minute_limit: int = 60
+    per_day_limit: int = 1000
+    per_month_limit: int = 30000
+
+class CreateDomainRequest(BaseModel):
+    domain: str
+    per_minute_limit: int = 10
+    per_day_limit: int = 100
+    per_month_limit: int = 3000
+
 
 # Utility functions
 def decimal_to_dms(decimal_degrees):
@@ -1467,46 +1490,92 @@ async def admin_logout_all(request: Request, admin_user: str = Depends(verify_ad
 
 @app.get("/admin/api-keys")
 async def get_api_keys(request: Request, admin_user: str = Depends(verify_admin_session)):
-    """Get all API keys"""
-    return {"api_keys": API_KEYS}
+    """Get all API keys from database with limits"""
+    result = get_api_keys_paginated()
+    return result
 
 @app.post("/admin/api-keys")
-async def create_api_key(request: Request, key_data: APIKeyRequest, admin_user: str = Depends(verify_admin_session)):
-    """Create new API key"""
-    api_key = secrets.token_urlsafe(32)
-    API_KEYS[api_key] = {
-        "name": key_data.name,
-        "description": key_data.description,
-        "created_by": admin_user,
-        "created_at": datetime.now().isoformat()
-    }
-    return {"api_key": api_key, "message": "API key created successfully"}
+async def create_api_key(request: Request, key_data: CreateAPIKeyRequest, admin_user: str = Depends(verify_admin_session)):
+    """Create new API key with rate limits"""
+    result = create_api_key_db(
+        name=key_data.name,
+        description=key_data.description or '',
+        per_minute_limit=key_data.per_minute_limit,
+        per_day_limit=key_data.per_day_limit,
+        per_month_limit=key_data.per_month_limit
+    )
+    if result:
+        return {"api_key": result['api_key'], "message": "API key created successfully"}
+    else:
+        raise HTTPException(status_code=500, detail="Failed to create API key")
 
-@app.delete("/admin/api-keys/{api_key}")
-async def delete_api_key(request: Request, api_key: str, admin_user: str = Depends(verify_admin_session)):
+@app.put("/admin/api-keys/{api_key_hash}/limits")
+async def update_api_key_limits_endpoint(request: Request, api_key_hash: str, limits_data: UpdateAPIKeyLimitsRequest, admin_user: str = Depends(verify_admin_session)):
+    """Update API key rate limits"""
+    success = update_api_key_limits(
+        key_hash=api_key_hash,
+        per_minute_limit=limits_data.per_minute_limit,
+        per_day_limit=limits_data.per_day_limit,
+        per_month_limit=limits_data.per_month_limit
+    )
+    if success:
+        return {"message": "API key limits updated successfully"}
+    else:
+        raise HTTPException(status_code=404, detail="API key not found")
+
+@app.delete("/admin/api-keys/{api_key_hash}")
+async def delete_api_key(request: Request, api_key_hash: str, admin_user: str = Depends(verify_admin_session)):
     """Delete API key"""
-    if api_key in API_KEYS:
-        del API_KEYS[api_key]
+    success = delete_api_key_db(api_key_hash)
+    if success:
         return {"message": "API key deleted successfully"}
     else:
         raise HTTPException(status_code=404, detail="API key not found")
 
 @app.get("/admin/domains")
 async def get_domains(request: Request, admin_user: str = Depends(verify_admin_session)):
-    """Get authorized domains"""
-    return {"domains": list(AUTHORIZED_DOMAINS)}
+    """Get authorized domains with limits from database"""
+    domains = get_authorized_domains()
+    return {"domains": domains}
 
 @app.post("/admin/domains")
-async def add_domain(request: Request, domain_data: DomainRequest, admin_user: str = Depends(verify_admin_session)):
-    """Add authorized domain"""
-    AUTHORIZED_DOMAINS.add(domain_data.domain)
-    return {"message": f"Domain {domain_data.domain} added successfully"}
+async def add_domain(request: Request, domain_data: CreateDomainRequest, admin_user: str = Depends(verify_admin_session)):
+    """Add authorized domain with rate limits"""
+    success = add_authorized_domain(
+        domain=domain_data.domain,
+        per_minute_limit=domain_data.per_minute_limit,
+        per_day_limit=domain_data.per_day_limit,
+        per_month_limit=domain_data.per_month_limit
+    )
+    if success:
+        return {"message": f"Domain {domain_data.domain} added successfully"}
+    else:
+        raise HTTPException(status_code=400, detail="Domain already exists or failed to add")
+
+@app.put("/admin/domains/{domain}/limits")
+async def update_domain_limits_endpoint(request: Request, domain: str, limits_data: UpdateDomainLimitsRequest, admin_user: str = Depends(verify_admin_session)):
+    """Update domain rate limits"""
+    conn = sqlite3.connect('astrology_db.sqlite3')
+    cursor = conn.cursor()
+    cursor.execute('''
+        UPDATE authorized_domains 
+        SET per_minute_limit = ?, per_day_limit = ?, per_month_limit = ?, updated_at = CURRENT_TIMESTAMP
+        WHERE domain = ?
+    ''', (limits_data.per_minute_limit, limits_data.per_day_limit, limits_data.per_month_limit, domain))
+    conn.commit()
+    success = cursor.rowcount > 0
+    conn.close()
+    
+    if success:
+        return {"message": f"Domain {domain} limits updated successfully"}
+    else:
+        raise HTTPException(status_code=404, detail="Domain not found")
 
 @app.delete("/admin/domains/{domain}")
 async def delete_domain(request: Request, domain: str, admin_user: str = Depends(verify_admin_session)):
     """Remove authorized domain"""
-    if domain in AUTHORIZED_DOMAINS:
-        AUTHORIZED_DOMAINS.remove(domain)
+    success = delete_authorized_domain(domain)
+    if success:
         return {"message": f"Domain {domain} removed successfully"}
     else:
         raise HTTPException(status_code=404, detail="Domain not found")
