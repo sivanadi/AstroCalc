@@ -42,7 +42,12 @@ async def add_security_headers(request: Request, call_next):
     return response
 
 # CORS configuration - restrictive by default
-allowed_origins = os.getenv('CORS_ORIGINS', 'http://localhost:5000').split(',')
+# Include Replit preview domain in CORS origins
+replit_dev_domain = os.getenv('REPLIT_DEV_DOMAIN', '')
+default_cors_origins = ['http://localhost:5000']
+if replit_dev_domain:
+    default_cors_origins.append(f'https://{replit_dev_domain}')
+allowed_origins = os.getenv('CORS_ORIGINS', ','.join(default_cors_origins)).split(',')
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,

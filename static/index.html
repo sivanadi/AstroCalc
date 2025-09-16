@@ -390,18 +390,15 @@
                 
                 <div class="result-card">
                     <div class="result-title">
-                        Ascendant
-                        <button onclick="copyAscendant()" class="btn-copy">Copy</button>
-                    </div>
-                    <div id="ascendantInfo"></div>
-                </div>
-                
-                <div class="result-card">
-                    <div class="result-title">
-                        Planetary Longitudes
+                        Ascendant & Planetary Longitudes
                         <button onclick="copyAllLongitudes()" class="btn-copy">Copy All Longitudes</button>
                     </div>
-                    <ul id="planetList" class="planet-list"></ul>
+                    <ul id="planetList" class="planet-list">
+                        <li id="ascendantItem" class="planet-item">
+                            <span class="planet-name">Ascendant</span>
+                            <span id="ascendantDegree" class="planet-degree"></span>
+                        </li>
+                    </ul>
                 </div>
             </div>
         </div>
@@ -494,29 +491,28 @@
             `;
             document.getElementById('chartInfo').innerHTML = chartInfo;
             
-            // Ascendant
-            const ascendantInfo = `
-                <p><strong>Ascendant:</strong> ${data.ascendant_deg}°</p>
-                <p><strong>Full Precision:</strong> ${data.ascendant_full_precision || data.ascendant_deg}°</p>
-            `;
-            document.getElementById('ascendantInfo').innerHTML = ascendantInfo;
-            
-            // Planets
+            // Combined Ascendant and Planets display
             const planetList = document.getElementById('planetList');
-            planetList.innerHTML = '';
             
-            const planets = data.planets_deg || {};
-            const planetsFullPrecision = data.planets_full_precision || planets;
+            // Set Ascendant with full precision
+            const ascendantFullPrecision = data.ascendant_full_precision || data.ascendant_deg;
+            document.getElementById('ascendantDegree').textContent = `${ascendantFullPrecision}°`;
             
-            for (const [planet, longitude] of Object.entries(planets)) {
+            // Get full precision planet data
+            const planetsFullPrecision = data.planets_full_precision || data.planets_deg || {};
+            
+            // Clear existing planets (keep ascendant)
+            const existingPlanets = planetList.querySelectorAll('li:not(#ascendantItem)');
+            existingPlanets.forEach(li => li.remove());
+            
+            // Add planets with full precision
+            for (const [planet, longitude] of Object.entries(planetsFullPrecision)) {
                 const li = document.createElement('li');
                 li.className = 'planet-item';
                 
-                const fullPrecision = planetsFullPrecision[planet] || longitude;
-                
                 li.innerHTML = `
                     <span class="planet-name">${planet}</span>
-                    <span class="planet-degree" title="Full precision: ${fullPrecision}°">${longitude}°</span>
+                    <span class="planet-degree">${longitude}°</span>
                 `;
                 planetList.appendChild(li);
             }
@@ -561,23 +557,18 @@ Input Time (UT): ${currentResults.input_time_ut || currentResults.hour || 'N/A'}
             copyToClipboard(info);
         }
 
-        function copyAscendant() {
-            if (!currentResults) return;
-            
-            const ascendant = `Ascendant: ${currentResults.ascendant_full_precision || currentResults.ascendant_deg}°`;
-            copyToClipboard(ascendant);
-        }
 
         function copyAllLongitudes() {
             if (!currentResults) return;
             
+            // Get ascendant and planets with full precision
+            const ascendant = `Ascendant: ${currentResults.ascendant_full_precision || currentResults.ascendant_deg}°`;
             const planets = currentResults.planets_full_precision || currentResults.planets_deg || {};
             const longitudes = Object.entries(planets)
                 .map(([planet, longitude]) => `${planet}: ${longitude}°`)
                 .join('\n');
             
-            const ascendant = `Ascendant: ${currentResults.ascendant_full_precision || currentResults.ascendant_deg}°`;
-            const allData = `${ascendant}\n\nPlanetary Longitudes:\n${longitudes}`;
+            const allData = `${ascendant}\n${longitudes}`;
             
             copyToClipboard(allData);
         }
