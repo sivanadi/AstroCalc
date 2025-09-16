@@ -1995,6 +1995,128 @@ async def add_domain(request: Request, domain_data: CreateDomainRequest, admin_u
     else:
         raise HTTPException(status_code=400, detail="Domain already exists or failed to add")
 
+# V1 Admin API Endpoints - Secure and scalable
+@app.get("/admin/v1/api-keys", response_model=PaginatedResponse)
+async def get_api_keys_v1_endpoint(
+    pagination: APIKeyPaginationParams = Depends(),
+    filters: APIKeyFilters = Depends(),
+    admin_user: str = Depends(verify_admin_session)
+):
+    """Enhanced API keys retrieval with pagination, search, filtering and sorting"""
+    try:
+        result = get_api_keys_v1(
+            page=pagination.page,
+            page_size=pagination.page_size,
+            search=pagination.search or "",
+            sort_by=pagination.sort_by,
+            sort_order=pagination.sort_order,
+            is_active=filters.is_active,
+            created_after=filters.created_after,
+            created_before=filters.created_before
+        )
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to retrieve API keys: {str(e)}")
+
+@app.post("/admin/v1/api-keys")
+async def create_api_key_v1(
+    key_data: CreateAPIKeyRequest, 
+    admin_user: str = Depends(verify_admin_session)
+):
+    """Create new API key with enhanced validation"""
+    try:
+        result = create_api_key_db(
+            name=key_data.name,
+            description=key_data.description or '',
+            per_minute_limit=key_data.per_minute_limit,
+            per_day_limit=key_data.per_day_limit,
+            per_month_limit=key_data.per_month_limit
+        )
+        if result:
+            return {"api_key": result['api_key'], "message": "API key created successfully"}
+        else:
+            raise HTTPException(status_code=500, detail="Failed to create API key")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to create API key: {str(e)}")
+
+@app.post("/admin/v1/api-keys/bulk")
+async def bulk_api_keys_v1(
+    operation: BulkOperation,
+    admin_user: str = Depends(verify_admin_session)
+):
+    """Perform bulk operations on API keys"""
+    try:
+        result = bulk_update_api_keys(operation)
+        if result["success"]:
+            return {
+                "message": f"Bulk operation completed successfully", 
+                "affected_rows": result["affected_rows"]
+            }
+        else:
+            raise HTTPException(status_code=500, detail=result["error"])
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Bulk operation failed: {str(e)}")
+
+@app.get("/admin/v1/domains", response_model=PaginatedResponse)
+async def get_domains_v1_endpoint(
+    pagination: DomainPaginationParams = Depends(),
+    filters: DomainFilters = Depends(),
+    admin_user: str = Depends(verify_admin_session)
+):
+    """Enhanced domains retrieval with pagination, search, filtering and sorting"""
+    try:
+        result = get_domains_v1(
+            page=pagination.page,
+            page_size=pagination.page_size,
+            search=pagination.search or "",
+            sort_by=pagination.sort_by,
+            sort_order=pagination.sort_order,
+            is_active=filters.is_active,
+            created_after=filters.created_after,
+            created_before=filters.created_before
+        )
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to retrieve domains: {str(e)}")
+
+@app.post("/admin/v1/domains")
+async def create_domain_v1(
+    domain_data: CreateDomainRequest, 
+    admin_user: str = Depends(verify_admin_session)
+):
+    """Create new authorized domain with enhanced validation"""
+    try:
+        success = add_authorized_domain(
+            domain=domain_data.domain,
+            per_minute_limit=domain_data.per_minute_limit,
+            per_day_limit=domain_data.per_day_limit,
+            per_month_limit=domain_data.per_month_limit
+        )
+        if success:
+            return {"message": f"Domain {domain_data.domain} added successfully"}
+        else:
+            raise HTTPException(status_code=400, detail="Domain already exists or failed to add")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to create domain: {str(e)}")
+
+@app.post("/admin/v1/domains/bulk")
+async def bulk_domains_v1(
+    operation: BulkOperation,
+    admin_user: str = Depends(verify_admin_session)
+):
+    """Perform bulk operations on domains"""
+    try:
+        result = bulk_update_domains(operation)
+        if result["success"]:
+            return {
+                "message": f"Bulk operation completed successfully", 
+                "affected_rows": result["affected_rows"]
+            }
+        else:
+            raise HTTPException(status_code=500, detail=result["error"])
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Bulk operation failed: {str(e)}")
+
 @app.put("/admin/domains/{domain}/limits")
 async def update_domain_limits_endpoint(request: Request, domain: str, limits_data: UpdateDomainLimitsRequest, admin_user: str = Depends(verify_admin_session)):
     """Update domain rate limits"""
