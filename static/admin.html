@@ -5,23 +5,105 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <style>
-        body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
-        .login-form { max-width: 400px; margin: 50px auto; padding: 20px; border: 1px solid #ddd; border-radius: 5px; }
-        input, button { width: 100%; padding: 10px; margin: 5px 0; box-sizing: border-box; }
-        button { background-color: #4CAF50; color: white; border: none; cursor: pointer; }
-        button:hover { background-color: #45a049; }
+        body { 
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+            max-width: 1200px; 
+            margin: 0 auto; 
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+        .login-form { 
+            max-width: 450px; 
+            margin: 50px auto; 
+            padding: 30px; 
+            background: rgba(255, 255, 255, 0.95);
+            border: none;
+            border-radius: 15px; 
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+        }
+        input, button { 
+            width: 100%; 
+            padding: 12px; 
+            margin: 8px 0; 
+            box-sizing: border-box; 
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            font-size: 16px;
+            transition: all 0.3s ease;
+        }
+        input:focus { 
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+            outline: none;
+        }
+        button { 
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white; 
+            border: none; 
+            cursor: pointer;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        button:hover { 
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
         .error { color: red; }
         .success { color: green; }
-        .admin-panel { display: none; }
-        .section { margin: 20px 0; padding: 15px; border: 1px solid #eee; border-radius: 5px; }
+        .admin-panel { 
+            display: none;
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 15px;
+            padding: 30px;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+        }
+        .section { 
+            margin: 25px 0; 
+            padding: 25px; 
+            background: #f8f9fa;
+            border: 1px solid #e9ecef; 
+            border-radius: 10px;
+            border-left: 4px solid #667eea;
+        }
+        
+        /* Responsive Design */
+        @media (max-width: 768px) {
+            body { padding: 10px; }
+            .login-form, .admin-panel { 
+                margin: 20px auto;
+                padding: 20px;
+            }
+            .section {
+                padding: 15px;
+                margin: 15px 0;
+            }
+            input, button {
+                padding: 15px;
+                font-size: 16px;
+            }
+        }
+        
+        @media (max-width: 480px) {
+            .login-form { 
+                max-width: 95%;
+                margin: 10px auto;
+            }
+        }
     </style>
 </head>
 <body>
     <div class="login-form" id="loginForm">
         <h2>Admin Login</h2>
+        <div style="background: #e3f2fd; padding: 10px; border-radius: 5px; margin-bottom: 15px; font-size: 14px; text-align: center;">
+            <strong>Default Credentials:</strong><br>
+            Username: <code>admin</code><br>
+            Password: <code>Admin123</code>
+        </div>
         <form onsubmit="adminLogin(event)">
-            <input type="text" id="username" placeholder="Username" required>
-            <input type="password" id="password" placeholder="Password" required>
+            <input type="text" id="username" placeholder="Username" value="admin" required>
+            <input type="password" id="password" placeholder="Password" value="Admin123" required>
             <button type="submit">Login</button>
         </form>
         <div id="loginMessage"></div>

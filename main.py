@@ -1363,7 +1363,7 @@ async def build_natal_transit_response(
                 "transit_house_system_used": transit_data["house_system_used"],
                 "timezone_used": natal_data["timezone_used"],
                 "natal_input_time_ut": natal_data["input_time_ut"],
-                "transit_input_time_ut": transit_data["input_time_ut"]
+                "transit_input_time_ut": natal_data["input_time_ut"]  # Use same as natal per user request
             },
             
             "natal_planets": dict(Ascendant=natal_data["ascendant_full_precision"], **natal_data["planets_full_precision"]),
