@@ -2,7 +2,7 @@
 
 ## Overview
 
-This is a FastAPI web application that provides Vedic astrology calculations using the Swiss Ephemeris library. The application calculates planetary longitudes and Ascendant positions in the Lahiri sidereal system, which is the standard ayanamsa used in Vedic astrology. The API accepts birth data (date, time, and coordinates) and returns precise astronomical calculations for chart generation.
+This is a FastAPI web application that provides Vedic astrology calculations using the Swiss Ephemeris library. The application calculates planetary longitudes and Ascendant positions using various sidereal systems (ayanamsas). The API accepts birth data (date, time, and coordinates) and returns precise astronomical calculations for both natal and transit chart generation with flexible ayanamsha support.
 
 ## User Preferences
 
