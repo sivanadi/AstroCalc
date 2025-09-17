@@ -1013,6 +1013,142 @@ def get_domain_limits(domain: str):
         }
     return None
 
+# Diagnostic and Settings helper functions
+def get_setting(key: str, default: str = '') -> str:
+    """Get a setting value from the database"""
+    conn = sqlite3.connect('astrology_db.sqlite3')
+    cursor = conn.cursor()
+    cursor.execute('SELECT value FROM app_settings WHERE key = ?', (key,))
+    result = cursor.fetchone()
+    conn.close()
+    return result[0] if result else default
+
+def get_setting_bool(key: str, default: bool = False) -> bool:
+    """Get a boolean setting value from the database"""
+    value = get_setting(key, str(default).lower())
+    return value.lower() in ('true', '1', 'yes', 'on')
+
+def update_setting(key: str, value: str) -> bool:
+    """Update a setting value in the database"""
+    try:
+        conn = sqlite3.connect('astrology_db.sqlite3')
+        cursor = conn.cursor()
+        cursor.execute('''
+            INSERT OR REPLACE INTO app_settings (key, value, updated_at) 
+            VALUES (?, ?, CURRENT_TIMESTAMP)
+        ''', (key, value))
+        conn.commit()
+        conn.close()
+        return True
+    except Exception:
+        return False
+
+def get_client_ip(request) -> str:
+    """Extract client IP from request headers"""
+    # Check for forwarded headers first (for reverse proxies)
+    if hasattr(request, 'headers'):
+        forwarded_for = request.headers.get('X-Forwarded-For')
+        if forwarded_for:
+            # Take the first IP from the chain
+            return forwarded_for.split(',')[0].strip()
+        
+        real_ip = request.headers.get('X-Real-IP')
+        if real_ip:
+            return real_ip
+    
+    # Fallback to client directly if available
+    if hasattr(request, 'client') and hasattr(request.client, 'host'):
+        return request.client.host
+    
+    return 'unknown'
+
+def is_bypass_active(request) -> bool:
+    """Check if API key enforcement bypass is currently active for this request"""
+    # Check if bypass is enabled
+    if not get_setting_bool('diag_bypass_enabled', False):
+        return False
+    
+    # Check if bypass has expired
+    expires_at_str = get_setting('diag_bypass_expires_at', '')
+    if expires_at_str:
+        try:
+            expires_at = datetime.fromisoformat(expires_at_str)
+            if datetime.now() > expires_at:
+                # Bypass has expired, disable it
+                update_setting('diag_bypass_enabled', 'false')
+                update_setting('diag_bypass_expires_at', '')
+                return False
+        except ValueError:
+            return False
+    
+    # Check if client IP is in allowed IPs (if specified)
+    allowed_ips_str = get_setting('diag_bypass_allowed_ips', '')
+    if allowed_ips_str:
+        allowed_ips = [ip.strip() for ip in allowed_ips_str.split(',') if ip.strip()]
+        client_ip = get_client_ip(request)
+        if allowed_ips and client_ip not in allowed_ips:
+            return False
+    
+    # Check environment restriction
+    environment = os.getenv('ENVIRONMENT', 'development')
+    if environment == 'production' and not os.getenv('ALLOW_PROD_BYPASS', 'false').lower() == 'true':
+        return False
+    
+    return True
+
+def log_diagnostic(request, outcome: str, reason_code: str, **kwargs) -> None:
+    """Log diagnostic information to the database"""
+    try:
+        conn = sqlite3.connect('astrology_db.sqlite3')
+        cursor = conn.cursor()
+        
+        # Extract request information safely
+        client_ip = get_client_ip(request)
+        path = getattr(request.url, 'path', '') if hasattr(request, 'url') else kwargs.get('path', '')
+        origin = request.headers.get('Origin', '') if hasattr(request, 'headers') else kwargs.get('origin', '')
+        user_agent = request.headers.get('User-Agent', '') if hasattr(request, 'headers') else kwargs.get('user_agent', '')
+        
+        # Generate a request ID for tracking
+        request_id = hashlib.sha256(f"{client_ip}{path}{datetime.now().isoformat()}".encode()).hexdigest()[:16]
+        
+        # Extract authorization info safely
+        auth_header = request.headers.get('Authorization', '') if hasattr(request, 'headers') else kwargs.get('auth_header', '')
+        auth_present = bool(auth_header)
+        auth_scheme = ''
+        key_hash_prefix = ''
+        
+        if auth_header:
+            parts = auth_header.split(' ', 1)
+            auth_scheme = parts[0] if parts else ''
+            if len(parts) > 1 and auth_scheme.lower() == 'bearer':
+                api_key = parts[1]
+                key_hash = hashlib.sha256(api_key.encode()).hexdigest()
+                key_hash_prefix = key_hash[:8]  # Only store prefix for security
+        
+        # Insert diagnostic log
+        cursor.execute('''
+            INSERT INTO api_diagnostics (
+                request_id, path, client_ip, origin, user_agent, auth_scheme, 
+                auth_present, key_hash_prefix, key_active, key_exists, domain, 
+                outcome, reason_code, rl_minute, rl_day, rl_month,
+                rl_minute_limit, rl_day_limit, rl_month_limit
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (
+            request_id, path, client_ip, origin, user_agent[:500], auth_scheme,
+            auth_present, key_hash_prefix, kwargs.get('key_active', None),
+            kwargs.get('key_exists', None), kwargs.get('domain', ''),
+            outcome, reason_code, kwargs.get('rl_minute', None),
+            kwargs.get('rl_day', None), kwargs.get('rl_month', None),
+            kwargs.get('rl_minute_limit', None), kwargs.get('rl_day_limit', None),
+            kwargs.get('rl_month_limit', None)
+        ))
+        
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        # Don't let logging errors break the application
+        print(f"Diagnostic logging error: {e}")
+
 # Analytics functions
 def get_usage_analytics(days: int = 30, view_type: str = "all", identifier: Optional[str] = None, period: Optional[str] = None):
     """Get comprehensive usage analytics for the last N days
