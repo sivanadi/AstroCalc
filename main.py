@@ -1629,12 +1629,18 @@ def check_domain_authorization(request: Request):
     origin = request.headers.get('origin', '')
     referer = request.headers.get('referer', '')
     
+    # Get all authorized domains (both in-memory and database)
+    all_authorized_domains = set(AUTHORIZED_DOMAINS)  # Start with in-memory domains
+    db_domains = get_authorized_domains()  # Get domains from database
+    for db_domain in db_domains:
+        all_authorized_domains.add(db_domain['domain'])
+    
     # Check direct host with exact match
-    if host in AUTHORIZED_DOMAINS:
+    if host in all_authorized_domains:
         return True
     
     # Check if host ends with any authorized domain (for subdomains)
-    for domain in AUTHORIZED_DOMAINS:
+    for domain in all_authorized_domains:
         if host.endswith('.' + domain) or host == domain:
             return True
     
@@ -1643,10 +1649,10 @@ def check_domain_authorization(request: Request):
         try:
             from urllib.parse import urlparse
             origin_host = urlparse(origin).hostname
-            if origin_host and origin_host.lower() in AUTHORIZED_DOMAINS:
+            if origin_host and origin_host.lower() in all_authorized_domains:
                 return True
             # Check subdomains for origin
-            for domain in AUTHORIZED_DOMAINS:
+            for domain in all_authorized_domains:
                 if origin_host and (origin_host.endswith('.' + domain) or origin_host == domain):
                     return True
         except Exception:
@@ -1657,10 +1663,10 @@ def check_domain_authorization(request: Request):
         try:
             from urllib.parse import urlparse
             referer_host = urlparse(referer).hostname
-            if referer_host and referer_host.lower() in AUTHORIZED_DOMAINS:
+            if referer_host and referer_host.lower() in all_authorized_domains:
                 return True
             # Check subdomains for referer
-            for domain in AUTHORIZED_DOMAINS:
+            for domain in all_authorized_domains:
                 if referer_host and (referer_host.endswith('.' + domain) or referer_host == domain):
                     return True
         except Exception:
