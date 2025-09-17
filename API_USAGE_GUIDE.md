@@ -8,6 +8,7 @@ This comprehensive guide provides step-by-step instructions for making API calls
 - [GET Method Usage](#get-method-usage)
 - [POST Method Usage](#post-method-usage)
 - [Platform-Specific Examples](#platform-specific-examples)
+- [Next.js Integration](#nextjs-integration)
 - [Advanced Use Cases](#advanced-use-cases)
 - [Error Handling](#error-handling)
 - [Response Parsing](#response-parsing)
@@ -831,6 +832,991 @@ try {
 
 ?>
 ```
+
+## Next.js Integration
+
+Next.js provides multiple patterns for API integration. This section covers both the modern App Router and the traditional Pages Router, with examples for Server Components, Client Components, Server Actions, and Route Handlers.
+
+### Prerequisites
+
+First, set up your Next.js project with the necessary dependencies:
+
+```bash
+# Create a new Next.js project with TypeScript
+npx create-next-app@latest my-astrology-app --typescript --tailwind --eslint --app
+
+# Install additional dependencies
+cd my-astrology-app
+npm install @types/node
+
+# Create environment variables file
+touch .env.local
+```
+
+### Environment Variables Setup
+
+```bash
+# .env.local
+VEDIC_ASTROLOGY_API_URL=http://localhost:5000
+VEDIC_ASTROLOGY_API_KEY=your_api_key_here
+
+# For production
+# VEDIC_ASTROLOGY_API_URL=https://your-api-domain.com
+```
+
+### TypeScript Interfaces
+
+Create shared type definitions for your astrology data:
+
+```typescript
+// types/astrology.ts
+export interface BirthData {
+  year: number;
+  month: number;
+  day: number;
+  hour: number;
+  minute: number;
+  second?: number;
+  lat: number;
+  lon: number;
+  tz: string;
+  ayanamsha?: string;
+  house_system?: string;
+  natal_ayanamsha?: string;
+  natal_house_system?: string;
+  transit_ayanamsha?: string;
+  transit_house_system?: string;
+}
+
+export interface PlanetPositions {
+  Sun: number;
+  Moon: number;
+  Mars: number;
+  Mercury: number;
+  Jupiter: number;
+  Venus: number;
+  Saturn: number;
+  Rahu: number;
+  Ketu: number;
+}
+
+export interface ChartData {
+  julian_day_ut: number;
+  ascendant_deg: number;
+  ascendant_full_precision: number;
+  planets_deg: PlanetPositions;
+  planets_full_precision: PlanetPositions;
+  ayanamsha_name: string;
+  ayanamsha_value_decimal: number;
+  ayanamsha_value_dms: string;
+  house_system_name: string;
+}
+
+export interface ApiResponse {
+  natal_chart: ChartData;
+  transit_chart: ChartData;
+  timezone_used: string;
+  input_time_ut: number;
+}
+
+export interface ApiError {
+  detail: string;
+  status?: number;
+}
+```
+
+### Utility Functions
+
+Create API utility functions for reuse across your application:
+
+```typescript
+// lib/astrology-api.ts
+import { BirthData, ApiResponse, ApiError } from '@/types/astrology';
+
+const API_BASE_URL = process.env.VEDIC_ASTROLOGY_API_URL || 'http://localhost:5000';
+const API_KEY = process.env.VEDIC_ASTROLOGY_API_KEY;
+
+class AstrologyApiError extends Error {
+  status: number;
+  
+  constructor(message: string, status: number) {
+    super(message);
+    this.status = status;
+    this.name = 'AstrologyApiError';
+  }
+}
+
+export async function calculateChart(birthData: BirthData): Promise<ApiResponse> {
+  const headers: HeadersInit = {
+    'Content-Type': 'application/json',
+  };
+
+  if (API_KEY) {
+    headers['Authorization'] = `Bearer ${API_KEY}`;
+  }
+
+  try {
+    const response = await fetch(`${API_BASE_URL}/chart`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(birthData),
+    });
+
+    if (!response.ok) {
+      let errorMessage = `HTTP error! status: ${response.status}`;
+      
+      try {
+        const errorData: ApiError = await response.json();
+        errorMessage = errorData.detail || errorMessage;
+      } catch {
+        // If JSON parsing fails, use the default message
+      }
+      
+      throw new AstrologyApiError(errorMessage, response.status);
+    }
+
+    return await response.json();
+  } catch (error) {
+    if (error instanceof AstrologyApiError) {
+      throw error;
+    }
+    throw new AstrologyApiError(`Network error: ${error}`, 0);
+  }
+}
+
+export async function getAyanamshaOptions(): Promise<Record<string, string>> {
+  const headers: HeadersInit = {};
+  
+  if (API_KEY) {
+    headers['Authorization'] = `Bearer ${API_KEY}`;
+  }
+
+  try {
+    const response = await fetch(`${API_BASE_URL}/ayanamsha-options`, {
+      headers,
+    });
+
+    if (!response.ok) {
+      throw new AstrologyApiError(`Failed to fetch ayanamsha options: ${response.status}`, response.status);
+    }
+
+    return await response.json();
+  } catch (error) {
+    if (error instanceof AstrologyApiError) {
+      throw error;
+    }
+    throw new AstrologyApiError(`Network error: ${error}`, 0);
+  }
+}
+```
+
+## App Router Implementation (Recommended)
+
+The App Router is the modern approach for Next.js applications, offering better performance and developer experience.
+
+### 1. Server Component with Direct API Calls
+
+```typescript
+// app/chart/[...params]/page.tsx
+import { calculateChart } from '@/lib/astrology-api';
+import { BirthData } from '@/types/astrology';
+import ChartDisplay from '@/components/ChartDisplay';
+import { notFound } from 'next/navigation';
+
+interface PageProps {
+  searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
+}
+
+export default async function ChartPage({ searchParams }: PageProps) {
+  const params = await searchParams;
+  
+  // Parse URL parameters
+  const year = parseInt(params.year as string);
+  const month = parseInt(params.month as string);
+  const day = parseInt(params.day as string);
+  const hour = parseInt(params.hour as string);
+  const minute = parseInt(params.minute as string) || 0;
+  const lat = parseFloat(params.lat as string);
+  const lon = parseFloat(params.lon as string);
+  const tz = params.tz as string;
+
+  // Validate required parameters
+  if (!year || !month || !day || !hour || !lat || !lon || !tz) {
+    notFound();
+  }
+
+  const birthData: BirthData = {
+    year,
+    month,
+    day,
+    hour,
+    minute,
+    lat,
+    lon,
+    tz,
+    ayanamsha: params.ayanamsha as string || 'lahiri',
+    house_system: params.house_system as string || 'placidus',
+  };
+
+  try {
+    // Direct API call in Server Component
+    const chartData = await calculateChart(birthData);
+    
+    return (
+      <div className="container mx-auto p-4">
+        <h1 className="text-3xl font-bold mb-6">Vedic Chart Calculation</h1>
+        <ChartDisplay data={chartData} birthData={birthData} />
+      </div>
+    );
+  } catch (error) {
+    return (
+      <div className="container mx-auto p-4">
+        <h1 className="text-3xl font-bold mb-6 text-red-600">Error</h1>
+        <p className="text-red-500">
+          {error instanceof Error ? error.message : 'Failed to calculate chart'}
+        </p>
+      </div>
+    );
+  }
+}
+```
+
+### 2. Server Actions for Form Handling
+
+```typescript
+// app/actions/chart-actions.ts
+'use server';
+
+import { calculateChart, getAyanamshaOptions } from '@/lib/astrology-api';
+import { BirthData } from '@/types/astrology';
+import { revalidatePath } from 'next/cache';
+import { redirect } from 'next/navigation';
+
+export async function calculateChartAction(formData: FormData) {
+  const birthData: BirthData = {
+    year: parseInt(formData.get('year') as string),
+    month: parseInt(formData.get('month') as string),
+    day: parseInt(formData.get('day') as string),
+    hour: parseInt(formData.get('hour') as string),
+    minute: parseInt(formData.get('minute') as string) || 0,
+    second: parseInt(formData.get('second') as string) || 0,
+    lat: parseFloat(formData.get('lat') as string),
+    lon: parseFloat(formData.get('lon') as string),
+    tz: formData.get('tz') as string,
+    ayanamsha: formData.get('ayanamsha') as string || 'lahiri',
+    house_system: formData.get('house_system') as string || 'placidus',
+  };
+
+  try {
+    const chartData = await calculateChart(birthData);
+    
+    // Store result in a way that can be accessed by the results page
+    // For simplicity, we'll redirect with URL params
+    const params = new URLSearchParams({
+      year: birthData.year.toString(),
+      month: birthData.month.toString(),
+      day: birthData.day.toString(),
+      hour: birthData.hour.toString(),
+      minute: birthData.minute.toString(),
+      lat: birthData.lat.toString(),
+      lon: birthData.lon.toString(),
+      tz: birthData.tz,
+      ayanamsha: birthData.ayanamsha || 'lahiri',
+      house_system: birthData.house_system || 'placidus',
+    });
+
+    redirect(`/chart?${params.toString()}`);
+  } catch (error) {
+    // Handle errors appropriately
+    throw new Error(error instanceof Error ? error.message : 'Failed to calculate chart');
+  }
+}
+
+export async function getAyanamshaOptionsAction() {
+  try {
+    return await getAyanamshaOptions();
+  } catch (error) {
+    throw new Error('Failed to fetch ayanamsha options');
+  }
+}
+```
+
+### 3. Interactive Form Component
+
+```typescript
+// components/ChartForm.tsx
+'use client';
+
+import { useState, useTransition } from 'react';
+import { calculateChartAction } from '@/app/actions/chart-actions';
+
+export default function ChartForm() {
+  const [isPending, startTransition] = useTransition();
+  const [errors, setErrors] = useState<string[]>([]);
+
+  const handleSubmit = async (formData: FormData) => {
+    setErrors([]);
+    
+    startTransition(async () => {
+      try {
+        await calculateChartAction(formData);
+      } catch (error) {
+        setErrors([error instanceof Error ? error.message : 'An error occurred']);
+      }
+    });
+  };
+
+  return (
+    <form action={handleSubmit} className="max-w-2xl mx-auto p-6 bg-white rounded-lg shadow-md">
+      <h2 className="text-2xl font-bold mb-6">Calculate Vedic Chart</h2>
+      
+      {errors.length > 0 && (
+        <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-md">
+          {errors.map((error, index) => (
+            <p key={index} className="text-red-600">{error}</p>
+          ))}
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+        <div>
+          <label className="block text-sm font-medium text-gray-700">Year</label>
+          <input
+            type="number"
+            name="year"
+            min="1800"
+            max="2100"
+            required
+            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm"
+            placeholder="1990"
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700">Month</label>
+          <input
+            type="number"
+            name="month"
+            min="1"
+            max="12"
+            required
+            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm"
+            placeholder="5"
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700">Day</label>
+          <input
+            type="number"
+            name="day"
+            min="1"
+            max="31"
+            required
+            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm"
+            placeholder="15"
+          />
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+        <div>
+          <label className="block text-sm font-medium text-gray-700">Hour</label>
+          <input
+            type="number"
+            name="hour"
+            min="0"
+            max="23"
+            required
+            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm"
+            placeholder="14"
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700">Minute</label>
+          <input
+            type="number"
+            name="minute"
+            min="0"
+            max="59"
+            defaultValue="0"
+            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm"
+            placeholder="30"
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700">Second</label>
+          <input
+            type="number"
+            name="second"
+            min="0"
+            max="59"
+            defaultValue="0"
+            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm"
+            placeholder="0"
+          />
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+        <div>
+          <label className="block text-sm font-medium text-gray-700">Latitude</label>
+          <input
+            type="number"
+            name="lat"
+            step="0.0001"
+            min="-90"
+            max="90"
+            required
+            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm"
+            placeholder="28.6139"
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700">Longitude</label>
+          <input
+            type="number"
+            name="lon"
+            step="0.0001"
+            min="-180"
+            max="180"
+            required
+            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm"
+            placeholder="77.2090"
+          />
+        </div>
+      </div>
+
+      <div className="mb-4">
+        <label className="block text-sm font-medium text-gray-700">Timezone</label>
+        <input
+          type="text"
+          name="tz"
+          required
+          className="mt-1 block w-full rounded-md border-gray-300 shadow-sm"
+          placeholder="Asia/Kolkata"
+        />
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+        <div>
+          <label className="block text-sm font-medium text-gray-700">Ayanamsha</label>
+          <select name="ayanamsha" defaultValue="lahiri" className="mt-1 block w-full rounded-md border-gray-300 shadow-sm">
+            <option value="lahiri">Lahiri</option>
+            <option value="krishnamurti">Krishnamurti</option>
+            <option value="raman">Raman</option>
+            <option value="yukteshwar">Yukteshwar</option>
+          </select>
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700">House System</label>
+          <select name="house_system" defaultValue="placidus" className="mt-1 block w-full rounded-md border-gray-300 shadow-sm">
+            <option value="placidus">Placidus</option>
+            <option value="equal">Equal House</option>
+            <option value="topocentric">Topocentric</option>
+            <option value="sripati">Sripati</option>
+          </select>
+        </div>
+      </div>
+
+      <button
+        type="submit"
+        disabled={isPending}
+        className="w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 disabled:opacity-50"
+      >
+        {isPending ? 'Calculating...' : 'Calculate Chart'}
+      </button>
+    </form>
+  );
+}
+```
+
+### 4. Route Handler for External API Calls
+
+```typescript
+// app/api/chart/route.ts
+import { NextRequest, NextResponse } from 'next/server';
+import { calculateChart } from '@/lib/astrology-api';
+import { BirthData } from '@/types/astrology';
+
+export async function POST(request: NextRequest) {
+  try {
+    const birthData: BirthData = await request.json();
+    
+    // Validate required fields
+    const requiredFields = ['year', 'month', 'day', 'hour', 'lat', 'lon', 'tz'];
+    for (const field of requiredFields) {
+      if (!(field in birthData)) {
+        return NextResponse.json(
+          { error: `Missing required field: ${field}` },
+          { status: 400 }
+        );
+      }
+    }
+
+    const chartData = await calculateChart(birthData);
+    
+    return NextResponse.json(chartData);
+  } catch (error) {
+    console.error('Chart calculation error:', error);
+    
+    if (error instanceof Error && error.message.includes('Rate limit')) {
+      return NextResponse.json(
+        { error: 'Rate limit exceeded. Please try again later.' },
+        { status: 429 }
+      );
+    }
+
+    return NextResponse.json(
+      { error: 'Failed to calculate chart' },
+      { status: 500 }
+    );
+  }
+}
+
+export async function GET(request: NextRequest) {
+  try {
+    const { searchParams } = new URL(request.url);
+    
+    const birthData: BirthData = {
+      year: parseInt(searchParams.get('year') || '0'),
+      month: parseInt(searchParams.get('month') || '0'),
+      day: parseInt(searchParams.get('day') || '0'),
+      hour: parseInt(searchParams.get('hour') || '0'),
+      minute: parseInt(searchParams.get('minute') || '0'),
+      second: parseInt(searchParams.get('second') || '0'),
+      lat: parseFloat(searchParams.get('lat') || '0'),
+      lon: parseFloat(searchParams.get('lon') || '0'),
+      tz: searchParams.get('tz') || '',
+      ayanamsha: searchParams.get('ayanamsha') || 'lahiri',
+      house_system: searchParams.get('house_system') || 'placidus',
+    };
+
+    const chartData = await calculateChart(birthData);
+    
+    return NextResponse.json(chartData);
+  } catch (error) {
+    console.error('Chart calculation error:', error);
+    
+    return NextResponse.json(
+      { error: 'Failed to calculate chart' },
+      { status: 500 }
+    );
+  }
+}
+```
+
+### 5. Custom Hook for Client-Side API Calls
+
+```typescript
+// hooks/useAstrologyApi.ts
+'use client';
+
+import { useState, useCallback } from 'react';
+import { BirthData, ApiResponse } from '@/types/astrology';
+
+interface UseAstrologyApiReturn {
+  data: ApiResponse | null;
+  loading: boolean;
+  error: string | null;
+  calculateChart: (birthData: BirthData) => Promise<void>;
+  reset: () => void;
+}
+
+export function useAstrologyApi(): UseAstrologyApiReturn {
+  const [data, setData] = useState<ApiResponse | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const calculateChart = useCallback(async (birthData: BirthData) => {
+    setLoading(true);
+    setError(null);
+
+    try {
+      const response = await fetch('/api/chart', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(birthData),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
+      }
+
+      const chartData = await response.json();
+      setData(chartData);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'An error occurred');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const reset = useCallback(() => {
+    setData(null);
+    setError(null);
+    setLoading(false);
+  }, []);
+
+  return {
+    data,
+    loading,
+    error,
+    calculateChart,
+    reset,
+  };
+}
+```
+
+### 6. Interactive Client Component with Hook
+
+```typescript
+// components/InteractiveChartCalculator.tsx
+'use client';
+
+import { useState } from 'react';
+import { useAstrologyApi } from '@/hooks/useAstrologyApi';
+import { BirthData } from '@/types/astrology';
+import ChartDisplay from './ChartDisplay';
+
+export default function InteractiveChartCalculator() {
+  const { data, loading, error, calculateChart, reset } = useAstrologyApi();
+  const [formData, setFormData] = useState<Partial<BirthData>>({
+    ayanamsha: 'lahiri',
+    house_system: 'placidus',
+    minute: 0,
+    second: 0,
+  });
+
+  const handleInputChange = (field: keyof BirthData, value: string | number) => {
+    setFormData(prev => ({
+      ...prev,
+      [field]: typeof value === 'string' ? value : Number(value),
+    }));
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    const birthData: BirthData = {
+      year: formData.year!,
+      month: formData.month!,
+      day: formData.day!,
+      hour: formData.hour!,
+      minute: formData.minute || 0,
+      second: formData.second || 0,
+      lat: formData.lat!,
+      lon: formData.lon!,
+      tz: formData.tz!,
+      ayanamsha: formData.ayanamsha || 'lahiri',
+      house_system: formData.house_system || 'placidus',
+    };
+
+    await calculateChart(birthData);
+  };
+
+  const handleReset = () => {
+    reset();
+    setFormData({
+      ayanamsha: 'lahiri',
+      house_system: 'placidus',
+      minute: 0,
+      second: 0,
+    });
+  };
+
+  return (
+    <div className="max-w-4xl mx-auto p-6">
+      <h1 className="text-3xl font-bold mb-8">Vedic Astrology Calculator</h1>
+      
+      {!data ? (
+        <form onSubmit={handleSubmit} className="bg-white p-6 rounded-lg shadow-md">
+          {/* Form fields similar to ChartForm component */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+            <input
+              type="number"
+              placeholder="Year"
+              value={formData.year || ''}
+              onChange={(e) => handleInputChange('year', e.target.value)}
+              required
+              className="rounded-md border-gray-300 shadow-sm"
+            />
+            <input
+              type="number"
+              placeholder="Month"
+              value={formData.month || ''}
+              onChange={(e) => handleInputChange('month', e.target.value)}
+              required
+              className="rounded-md border-gray-300 shadow-sm"
+            />
+            <input
+              type="number"
+              placeholder="Day"
+              value={formData.day || ''}
+              onChange={(e) => handleInputChange('day', e.target.value)}
+              required
+              className="rounded-md border-gray-300 shadow-sm"
+            />
+          </div>
+          
+          {error && (
+            <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-md">
+              <p className="text-red-600">{error}</p>
+            </div>
+          )}
+
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 disabled:opacity-50"
+          >
+            {loading ? 'Calculating...' : 'Calculate Chart'}
+          </button>
+        </form>
+      ) : (
+        <div>
+          <div className="mb-4">
+            <button
+              onClick={handleReset}
+              className="bg-gray-600 text-white py-2 px-4 rounded-md hover:bg-gray-700"
+            >
+              Calculate Another Chart
+            </button>
+          </div>
+          <ChartDisplay data={data} />
+        </div>
+      )}
+    </div>
+  );
+}
+```
+
+## Pages Router Implementation (Legacy)
+
+For projects using the Pages Router, here are the equivalent implementations:
+
+### 1. API Routes
+
+```typescript
+// pages/api/chart.ts
+import type { NextApiRequest, NextApiResponse } from 'next';
+import { calculateChart } from '@/lib/astrology-api';
+import { BirthData, ApiResponse } from '@/types/astrology';
+
+type Data = ApiResponse | { error: string };
+
+export default async function handler(
+  req: NextApiRequest,
+  res: NextApiResponse<Data>
+) {
+  if (req.method === 'POST') {
+    try {
+      const birthData: BirthData = req.body;
+      const chartData = await calculateChart(birthData);
+      res.status(200).json(chartData);
+    } catch (error) {
+      console.error('Chart calculation error:', error);
+      res.status(500).json({ error: 'Failed to calculate chart' });
+    }
+  } else if (req.method === 'GET') {
+    try {
+      const {
+        year, month, day, hour, minute = '0', second = '0',
+        lat, lon, tz, ayanamsha = 'lahiri', house_system = 'placidus'
+      } = req.query;
+
+      const birthData: BirthData = {
+        year: parseInt(year as string),
+        month: parseInt(month as string),
+        day: parseInt(day as string),
+        hour: parseInt(hour as string),
+        minute: parseInt(minute as string),
+        second: parseInt(second as string),
+        lat: parseFloat(lat as string),
+        lon: parseFloat(lon as string),
+        tz: tz as string,
+        ayanamsha: ayanamsha as string,
+        house_system: house_system as string,
+      };
+
+      const chartData = await calculateChart(birthData);
+      res.status(200).json(chartData);
+    } catch (error) {
+      console.error('Chart calculation error:', error);
+      res.status(500).json({ error: 'Failed to calculate chart' });
+    }
+  } else {
+    res.setHeader('Allow', ['GET', 'POST']);
+    res.status(405).end(`Method ${req.method} Not Allowed`);
+  }
+}
+```
+
+### 2. Page Component with SSR
+
+```typescript
+// pages/chart.tsx
+import { GetServerSideProps, InferGetServerSidePropsType } from 'next';
+import { calculateChart } from '@/lib/astrology-api';
+import { BirthData, ApiResponse } from '@/types/astrology';
+import ChartDisplay from '@/components/ChartDisplay';
+
+interface Props {
+  chartData?: ApiResponse;
+  error?: string;
+  birthData?: BirthData;
+}
+
+export default function ChartPage({ 
+  chartData, 
+  error, 
+  birthData 
+}: InferGetServerSidePropsType<typeof getServerSideProps>) {
+  if (error) {
+    return (
+      <div className="container mx-auto p-4">
+        <h1 className="text-3xl font-bold mb-6 text-red-600">Error</h1>
+        <p className="text-red-500">{error}</p>
+      </div>
+    );
+  }
+
+  if (!chartData) {
+    return (
+      <div className="container mx-auto p-4">
+        <h1 className="text-3xl font-bold mb-6">No Chart Data</h1>
+        <p>Please provide valid birth data parameters.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="container mx-auto p-4">
+      <h1 className="text-3xl font-bold mb-6">Vedic Chart Calculation</h1>
+      <ChartDisplay data={chartData} birthData={birthData} />
+    </div>
+  );
+}
+
+export const getServerSideProps: GetServerSideProps<Props> = async (context) => {
+  const { query } = context;
+  
+  try {
+    const birthData: BirthData = {
+      year: parseInt(query.year as string),
+      month: parseInt(query.month as string),
+      day: parseInt(query.day as string),
+      hour: parseInt(query.hour as string),
+      minute: parseInt(query.minute as string) || 0,
+      second: parseInt(query.second as string) || 0,
+      lat: parseFloat(query.lat as string),
+      lon: parseFloat(query.lon as string),
+      tz: query.tz as string,
+      ayanamsha: query.ayanamsha as string || 'lahiri',
+      house_system: query.house_system as string || 'placidus',
+    };
+
+    // Validate required parameters
+    if (!birthData.year || !birthData.month || !birthData.day || 
+        !birthData.hour || !birthData.lat || !birthData.lon || !birthData.tz) {
+      return {
+        props: {
+          error: 'Missing required parameters'
+        }
+      };
+    }
+
+    const chartData = await calculateChart(birthData);
+    
+    return {
+      props: {
+        chartData,
+        birthData
+      }
+    };
+  } catch (error) {
+    return {
+      props: {
+        error: error instanceof Error ? error.message : 'Failed to calculate chart'
+      }
+    };
+  }
+};
+```
+
+### Deployment Configuration
+
+Add the following to your `next.config.js`:
+
+```javascript
+// next.config.js
+/** @type {import('next').NextConfig} */
+const nextConfig = {
+  env: {
+    VEDIC_ASTROLOGY_API_URL: process.env.VEDIC_ASTROLOGY_API_URL,
+  },
+  // Enable API routes to handle CORS if needed
+  async headers() {
+    return [
+      {
+        source: '/api/:path*',
+        headers: [
+          {
+            key: 'Access-Control-Allow-Origin',
+            value: process.env.NODE_ENV === 'production' 
+              ? 'https://yourdomain.com' 
+              : '*'
+          },
+          {
+            key: 'Access-Control-Allow-Methods',
+            value: 'GET, POST, PUT, DELETE, OPTIONS',
+          },
+          {
+            key: 'Access-Control-Allow-Headers',
+            value: 'Content-Type, Authorization',
+          },
+        ],
+      },
+    ];
+  },
+};
+
+module.exports = nextConfig;
+```
+
+### Complete Example Usage
+
+Create a complete astrology application:
+
+```typescript
+// app/page.tsx
+import ChartForm from '@/components/ChartForm';
+import { Suspense } from 'react';
+
+export default function HomePage() {
+  return (
+    <div className="min-h-screen bg-gray-50">
+      <div className="container mx-auto py-12">
+        <div className="text-center mb-12">
+          <h1 className="text-4xl font-bold text-gray-900 mb-4">
+            Vedic Astrology Calculator
+          </h1>
+          <p className="text-lg text-gray-600">
+            Calculate precise planetary positions using Swiss Ephemeris
+          </p>
+        </div>
+        
+        <Suspense fallback={<div>Loading form...</div>}>
+          <ChartForm />
+        </Suspense>
+      </div>
+    </div>
+  );
+}
+```
+
+This comprehensive Next.js integration covers all modern patterns and provides both Server and Client Component examples, making it easy to integrate the Vedic Astrology Calculator API into any Next.js application.
 
 ## Advanced Use Cases
 
