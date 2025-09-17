@@ -10,7 +10,7 @@ import pytz
 import os
 import json
 import secrets
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Dict, Union, Optional, List
 import hashlib
 import bcrypt
@@ -787,6 +787,7 @@ def check_and_increment_usage(identifier: str, identifier_type: str, per_minute_
     cursor = conn.cursor()
     
     minute_key, day_key, month_key = get_time_keys()
+    now = datetime.now()
     
     try:
         # Check current usage
@@ -802,18 +803,27 @@ def check_and_increment_usage(identifier: str, identifier_type: str, per_minute_
         month_count = cursor.fetchone()
         month_count = month_count[0] if month_count else 0
         
-        # Check limits
+        # Check limits with enhanced user-friendly messages
         if minute_count >= per_minute_limit:
             conn.close()
-            return False, f"Per-minute limit exceeded: {minute_count}/{per_minute_limit}"
+            seconds_remaining = 60 - now.second
+            return False, f"Per-minute limit exceeded: {minute_count}/{per_minute_limit}. You have reached your maximum requests per minute. Please wait {seconds_remaining} seconds before making your next request."
         
         if day_count >= per_day_limit:
             conn.close()
-            return False, f"Daily limit exceeded: {day_count}/{per_day_limit}"
+            next_day = now.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1)
+            hours_remaining = int((next_day - now).total_seconds() // 3600)
+            minutes_remaining = int(((next_day - now).total_seconds() % 3600) // 60)
+            return False, f"Daily limit exceeded: {day_count}/{per_day_limit}. You have reached your maximum requests for today. Your limit will reset in {hours_remaining} hours and {minutes_remaining} minutes."
         
         if month_count >= per_month_limit:
             conn.close()
-            return False, f"Monthly limit exceeded: {month_count}/{per_month_limit}"
+            if now.month == 12:
+                next_month = now.replace(year=now.year + 1, month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
+            else:
+                next_month = now.replace(month=now.month + 1, day=1, hour=0, minute=0, second=0, microsecond=0)
+            days_remaining = (next_month - now).days
+            return False, f"Monthly limit exceeded: {month_count}/{per_month_limit}. You have reached your maximum requests for this month. Your limit will reset in {days_remaining} days."
         
         # Increment counters atomically
         cursor.execute('''
@@ -880,6 +890,269 @@ def get_domain_limits(domain: str):
             'is_active': bool(result[3])
         }
     return None
+
+# Analytics functions
+def get_usage_analytics(days: int = 30):
+    """Get comprehensive usage analytics for the last N days"""
+    conn = sqlite3.connect('astrology_db.sqlite3')
+    cursor = conn.cursor()
+    
+    # Calculate date range
+    end_date = datetime.now().date()
+    start_date = end_date - timedelta(days=days)
+    
+    try:
+        # Get daily usage for line chart
+        cursor.execute('''
+            SELECT day_key, 
+                   identifier_type,
+                   SUM(count) as total_requests
+            FROM usage_day 
+            WHERE day_key >= ? AND day_key <= ?
+            GROUP BY day_key, identifier_type
+            ORDER BY day_key
+        ''', (start_date.strftime('%Y-%m-%d'), end_date.strftime('%Y-%m-%d')))
+        
+        daily_usage_raw = cursor.fetchall()
+        
+        # Process daily usage data
+        daily_usage = {}
+        for row in daily_usage_raw:
+            day_key, identifier_type, count = row
+            if day_key not in daily_usage:
+                daily_usage[day_key] = {'api_key': 0, 'domain': 0, 'total': 0}
+            daily_usage[day_key][identifier_type] = count
+            daily_usage[day_key]['total'] += count
+        
+        # Fill in missing days with zeros
+        current_date = start_date
+        while current_date <= end_date:
+            day_key = current_date.strftime('%Y-%m-%d')
+            if day_key not in daily_usage:
+                daily_usage[day_key] = {'api_key': 0, 'domain': 0, 'total': 0}
+            current_date += timedelta(days=1)
+        
+        # Get total statistics
+        cursor.execute('''
+            SELECT identifier_type, 
+                   SUM(count) as total_requests,
+                   COUNT(DISTINCT identifier) as unique_identifiers
+            FROM usage_day 
+            WHERE day_key >= ? AND day_key <= ?
+            GROUP BY identifier_type
+        ''', (start_date.strftime('%Y-%m-%d'), end_date.strftime('%Y-%m-%d')))
+        
+        totals_raw = cursor.fetchall()
+        totals = {'api_key': {'requests': 0, 'unique': 0}, 'domain': {'requests': 0, 'unique': 0}}
+        
+        for row in totals_raw:
+            identifier_type, total_requests, unique_identifiers = row
+            totals[identifier_type] = {'requests': total_requests, 'unique': unique_identifiers}
+        
+        # Get top API keys by usage
+        cursor.execute('''
+            SELECT ak.name, ak.description, SUM(ud.count) as total_requests
+            FROM usage_day ud
+            JOIN api_keys ak ON ud.identifier = ak.key_hash
+            WHERE ud.day_key >= ? AND ud.day_key <= ? AND ud.identifier_type = 'api_key'
+            GROUP BY ud.identifier, ak.name, ak.description
+            ORDER BY total_requests DESC
+            LIMIT 10
+        ''', (start_date.strftime('%Y-%m-%d'), end_date.strftime('%Y-%m-%d')))
+        
+        top_api_keys = []
+        for row in cursor.fetchall():
+            name, description, requests = row
+            top_api_keys.append({
+                'name': name,
+                'description': description or 'No description',
+                'requests': requests
+            })
+        
+        # Get top domains by usage
+        cursor.execute('''
+            SELECT ad.domain, ad.description, SUM(ud.count) as total_requests
+            FROM usage_day ud
+            JOIN authorized_domains ad ON ud.identifier = ad.domain
+            WHERE ud.day_key >= ? AND ud.day_key <= ? AND ud.identifier_type = 'domain'
+            GROUP BY ud.identifier, ad.domain, ad.description
+            ORDER BY total_requests DESC
+            LIMIT 10
+        ''', (start_date.strftime('%Y-%m-%d'), end_date.strftime('%Y-%m-%d')))
+        
+        top_domains = []
+        for row in cursor.fetchall():
+            domain, description, requests = row
+            top_domains.append({
+                'domain': domain,
+                'description': description or 'No description',
+                'requests': requests
+            })
+        
+        # Get hourly distribution (for current day)
+        today = datetime.now().strftime('%Y-%m-%d')
+        cursor.execute('''
+            SELECT SUBSTR(minute_key, 12, 2) as hour, SUM(count) as requests
+            FROM usage_minute
+            WHERE minute_key LIKE ? || '%'
+            GROUP BY hour
+            ORDER BY hour
+        ''', (today,))
+        
+        hourly_distribution = {}
+        for row in cursor.fetchall():
+            hour, requests = row
+            hourly_distribution[int(hour)] = requests
+        
+        # Fill in missing hours with zeros
+        for hour in range(24):
+            if hour not in hourly_distribution:
+                hourly_distribution[hour] = 0
+        
+        conn.close()
+        
+        return {
+            'daily_usage': daily_usage,
+            'totals': totals,
+            'top_api_keys': top_api_keys,
+            'top_domains': top_domains,
+            'hourly_distribution': hourly_distribution,
+            'date_range': {
+                'start': start_date.strftime('%Y-%m-%d'),
+                'end': end_date.strftime('%Y-%m-%d'),
+                'days': days
+            }
+        }
+        
+    except Exception as e:
+        conn.close()
+        raise Exception(f"Analytics query error: {str(e)}")
+
+def get_usage_summary():
+    """Get quick summary statistics"""
+    conn = sqlite3.connect('astrology_db.sqlite3')
+    cursor = conn.cursor()
+    
+    try:
+        # Get today's usage
+        today = datetime.now().strftime('%Y-%m-%d')
+        cursor.execute('''
+            SELECT SUM(count) as today_requests
+            FROM usage_day 
+            WHERE day_key = ?
+        ''', (today,))
+        
+        today_requests = cursor.fetchone()[0] or 0
+        
+        # Get this month's usage
+        this_month = datetime.now().strftime('%Y-%m')
+        cursor.execute('''
+            SELECT SUM(count) as month_requests
+            FROM usage_month 
+            WHERE month_key = ?
+        ''', (this_month,))
+        
+        month_requests = cursor.fetchone()[0] or 0
+        
+        # Get total active API keys
+        cursor.execute('SELECT COUNT(*) FROM api_keys WHERE is_active = 1')
+        active_api_keys = cursor.fetchone()[0]
+        
+        # Get total active domains
+        cursor.execute('SELECT COUNT(*) FROM authorized_domains WHERE is_active = 1')
+        active_domains = cursor.fetchone()[0]
+        
+        # Get average daily requests (last 7 days)
+        seven_days_ago = (datetime.now().date() - timedelta(days=7)).strftime('%Y-%m-%d')
+        cursor.execute('''
+            SELECT AVG(daily_total) as avg_daily
+            FROM (
+                SELECT day_key, SUM(count) as daily_total
+                FROM usage_day
+                WHERE day_key >= ?
+                GROUP BY day_key
+            )
+        ''', (seven_days_ago,))
+        
+        avg_daily = cursor.fetchone()[0] or 0
+        
+        conn.close()
+        
+        return {
+            'today_requests': today_requests,
+            'month_requests': month_requests,
+            'active_api_keys': active_api_keys,
+            'active_domains': active_domains,
+            'avg_daily_requests': round(avg_daily, 1)
+        }
+        
+    except Exception as e:
+        conn.close()
+        raise Exception(f"Summary query error: {str(e)}")
+
+def get_rate_limit_violations():
+    """Get recent rate limit violations for monitoring"""
+    conn = sqlite3.connect('astrology_db.sqlite3')
+    cursor = conn.cursor()
+    
+    try:
+        # Get API keys that hit limits recently
+        yesterday = (datetime.now().date() - timedelta(days=1)).strftime('%Y-%m-%d')
+        cursor.execute('''
+            SELECT ak.name, ak.per_minute_limit, ak.per_day_limit, ak.per_month_limit,
+                   MAX(ud.count) as max_daily_usage
+            FROM api_keys ak
+            LEFT JOIN usage_day ud ON ak.key_hash = ud.identifier AND ud.day_key >= ?
+            WHERE ak.is_active = 1
+            GROUP BY ak.key_hash, ak.name, ak.per_minute_limit, ak.per_day_limit, ak.per_month_limit
+            HAVING max_daily_usage >= ak.per_day_limit * 0.8
+            ORDER BY max_daily_usage DESC
+        ''', (yesterday,))
+        
+        api_key_violations = []
+        for row in cursor.fetchall():
+            name, per_min, per_day, per_month, max_usage = row
+            violation_percentage = (max_usage / per_day * 100) if per_day > 0 else 0
+            api_key_violations.append({
+                'name': name,
+                'max_usage': max_usage or 0,
+                'daily_limit': per_day,
+                'violation_percentage': round(violation_percentage, 1)
+            })
+        
+        # Get domains that hit limits recently
+        cursor.execute('''
+            SELECT ad.domain, ad.per_minute_limit, ad.per_day_limit, ad.per_month_limit,
+                   MAX(ud.count) as max_daily_usage
+            FROM authorized_domains ad
+            LEFT JOIN usage_day ud ON ad.domain = ud.identifier AND ud.day_key >= ?
+            WHERE ad.is_active = 1
+            GROUP BY ad.domain, ad.per_minute_limit, ad.per_day_limit, ad.per_month_limit
+            HAVING max_daily_usage >= ad.per_day_limit * 0.8
+            ORDER BY max_daily_usage DESC
+        ''', (yesterday,))
+        
+        domain_violations = []
+        for row in cursor.fetchall():
+            domain, per_min, per_day, per_month, max_usage = row
+            violation_percentage = (max_usage / per_day * 100) if per_day > 0 else 0
+            domain_violations.append({
+                'domain': domain,
+                'max_usage': max_usage or 0,
+                'daily_limit': per_day,
+                'violation_percentage': round(violation_percentage, 1)
+            })
+        
+        conn.close()
+        
+        return {
+            'api_key_violations': api_key_violations,
+            'domain_violations': domain_violations
+        }
+        
+    except Exception as e:
+        conn.close()
+        raise Exception(f"Violations query error: {str(e)}")
 
 # V1 Admin API Enhanced Database Functions - Scalable for large datasets
 # Note: add_database_indexes() function is defined earlier and called during startup
@@ -2144,6 +2417,54 @@ async def delete_domain(request: Request, domain: str, admin_user: str = Depends
         return {"message": f"Domain {domain} removed successfully"}
     else:
         raise HTTPException(status_code=404, detail="Domain not found")
+
+# Analytics endpoints
+@app.get("/admin/analytics/dashboard")
+async def get_analytics_dashboard(
+    days: int = 30,
+    admin_user: str = Depends(verify_admin_session)
+):
+    """Get comprehensive analytics data for admin dashboard"""
+    try:
+        analytics = get_usage_analytics(days)
+        summary = get_usage_summary()
+        violations = get_rate_limit_violations()
+        
+        return {
+            "analytics": analytics,
+            "summary": summary,
+            "violations": violations,
+            "generated_at": datetime.now().isoformat()
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to load analytics: {str(e)}")
+
+@app.get("/admin/analytics/summary")
+async def get_analytics_summary(admin_user: str = Depends(verify_admin_session)):
+    """Get quick summary statistics for dashboard KPIs"""
+    try:
+        return get_usage_summary()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to load summary: {str(e)}")
+
+@app.get("/admin/analytics/usage/{days}")
+async def get_usage_data(days: int, admin_user: str = Depends(verify_admin_session)):
+    """Get detailed usage analytics for specified number of days"""
+    if days < 1 or days > 365:
+        raise HTTPException(status_code=400, detail="Days must be between 1 and 365")
+    
+    try:
+        return get_usage_analytics(days)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to load usage data: {str(e)}")
+
+@app.get("/admin/analytics/violations")
+async def get_violations_data(admin_user: str = Depends(verify_admin_session)):
+    """Get recent rate limit violations"""
+    try:
+        return get_rate_limit_violations()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to load violations: {str(e)}")
 
 @app.get("/ayanamsha-options")
 async def get_ayanamsha_options():

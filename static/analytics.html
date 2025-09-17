@@ -1,0 +1,676 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Analytics Dashboard - Vedic Astrology Calculator</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body { 
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+            margin: 0;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            color: #333;
+        }
+        
+        .header {
+            background: rgba(255, 255, 255, 0.95);
+            padding: 20px;
+            border-radius: 15px;
+            margin-bottom: 20px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+        
+        .header h1 {
+            margin: 0;
+            color: #333;
+            font-size: 28px;
+        }
+        
+        .header-controls {
+            display: flex;
+            gap: 15px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+        
+        .date-selector select {
+            padding: 8px 12px;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            font-size: 14px;
+            background: white;
+        }
+        
+        .refresh-btn, .back-btn {
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            transition: transform 0.2s ease;
+        }
+        
+        .refresh-btn:hover, .back-btn:hover {
+            transform: translateY(-2px);
+        }
+        
+        .dashboard {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        
+        .kpi-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 30px;
+        }
+        
+        .kpi-card {
+            background: rgba(255, 255, 255, 0.95);
+            padding: 20px;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+            text-align: center;
+            border-left: 5px solid #667eea;
+        }
+        
+        .kpi-value {
+            font-size: 32px;
+            font-weight: bold;
+            color: #667eea;
+            margin: 10px 0 5px 0;
+        }
+        
+        .kpi-label {
+            font-size: 14px;
+            color: #666;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        
+        .chart-container {
+            background: rgba(255, 255, 255, 0.95);
+            padding: 25px;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+            grid-column: span 2;
+        }
+        
+        .chart-title {
+            font-size: 20px;
+            font-weight: 600;
+            margin-bottom: 20px;
+            color: #333;
+        }
+        
+        .chart-canvas {
+            max-height: 400px;
+        }
+        
+        .data-table {
+            background: rgba(255, 255, 255, 0.95);
+            padding: 25px;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+        }
+        
+        .table-title {
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 15px;
+            color: #333;
+        }
+        
+        .table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+        }
+        
+        .table th, .table td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #eee;
+        }
+        
+        .table th {
+            background: #f8f9fa;
+            font-weight: 600;
+            color: #555;
+        }
+        
+        .table tr:hover {
+            background: #f8f9fa;
+        }
+        
+        .status-indicator {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            margin-right: 8px;
+        }
+        
+        .status-healthy { background: #28a745; }
+        .status-warning { background: #ffc107; }
+        .status-danger { background: #dc3545; }
+        
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #666;
+        }
+        
+        .error {
+            background: #f8d7da;
+            color: #721c24;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 15px 0;
+            border: 1px solid #f5c6cb;
+        }
+        
+        .success {
+            background: #d4edda;
+            color: #155724;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 15px 0;
+            border: 1px solid #c3e6cb;
+        }
+        
+        .metric-change {
+            font-size: 12px;
+            margin-top: 5px;
+        }
+        
+        .metric-up { color: #28a745; }
+        .metric-down { color: #dc3545; }
+        
+        @media (max-width: 768px) {
+            .header {
+                flex-direction: column;
+                gap: 15px;
+            }
+            
+            .header-controls {
+                width: 100%;
+                justify-content: center;
+            }
+            
+            .chart-container {
+                grid-column: span 1;
+            }
+            
+            .kpi-grid {
+                grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            }
+        }
+        
+        .hourly-chart {
+            grid-column: span 1;
+        }
+        
+        .violations-section {
+            background: rgba(255, 255, 255, 0.95);
+            padding: 25px;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+            margin-top: 20px;
+            border-left: 5px solid #dc3545;
+        }
+        
+        .violations-title {
+            color: #dc3545;
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 15px;
+        }
+        
+        .no-violations {
+            color: #28a745;
+            font-style: italic;
+            text-align: center;
+            padding: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>📊 Analytics Dashboard</h1>
+        <div class="header-controls">
+            <div class="date-selector">
+                <label for="days">Time Period:</label>
+                <select id="days" onchange="loadAnalytics()">
+                    <option value="7">Last 7 Days</option>
+                    <option value="14">Last 14 Days</option>
+                    <option value="30" selected>Last 30 Days</option>
+                    <option value="60">Last 60 Days</option>
+                    <option value="90">Last 90 Days</option>
+                </select>
+            </div>
+            <button class="refresh-btn" onclick="refreshData()">
+                🔄 Refresh
+            </button>
+            <a href="/static/admin.html" class="back-btn">
+                ← Back to Admin
+            </a>
+        </div>
+    </div>
+
+    <div id="loading" class="loading">
+        <p>📈 Loading analytics data...</p>
+    </div>
+
+    <div id="error-message" class="error" style="display: none;"></div>
+
+    <div id="dashboard" style="display: none;">
+        <!-- KPI Cards -->
+        <div class="kpi-grid">
+            <div class="kpi-card">
+                <div class="kpi-value" id="kpi-today">-</div>
+                <div class="kpi-label">Today's Requests</div>
+            </div>
+            <div class="kpi-card">
+                <div class="kpi-value" id="kpi-month">-</div>
+                <div class="kpi-label">This Month</div>
+            </div>
+            <div class="kpi-card">
+                <div class="kpi-value" id="kpi-api-keys">-</div>
+                <div class="kpi-label">Active API Keys</div>
+            </div>
+            <div class="kpi-card">
+                <div class="kpi-value" id="kpi-domains">-</div>
+                <div class="kpi-label">Active Domains</div>
+            </div>
+            <div class="kpi-card">
+                <div class="kpi-value" id="kpi-avg-daily">-</div>
+                <div class="kpi-label">Avg Daily Requests</div>
+            </div>
+        </div>
+
+        <!-- Main Charts -->
+        <div class="dashboard">
+            <div class="chart-container">
+                <div class="chart-title">📈 Daily API Usage Over Time</div>
+                <canvas id="usageChart" class="chart-canvas"></canvas>
+            </div>
+            
+            <div class="chart-container hourly-chart">
+                <div class="chart-title">🕐 Today's Hourly Distribution</div>
+                <canvas id="hourlyChart" class="chart-canvas"></canvas>
+            </div>
+        </div>
+
+        <!-- Data Tables -->
+        <div class="dashboard">
+            <div class="data-table">
+                <div class="table-title">🔑 Top API Keys by Usage</div>
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>Description</th>
+                            <th>Requests</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody id="api-keys-table">
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="data-table">
+                <div class="table-title">🌐 Top Domains by Usage</div>
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>Domain</th>
+                            <th>Description</th>
+                            <th>Requests</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody id="domains-table">
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Rate Limit Violations -->
+        <div class="violations-section">
+            <div class="violations-title">⚠️ Rate Limit Violations Monitor</div>
+            <div id="violations-content">
+                <div class="no-violations">✅ No recent rate limit violations detected</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let usageChart = null;
+        let hourlyChart = null;
+        let currentToken = localStorage.getItem('adminToken');
+
+        async function makeAuthRequest(url) {
+            const response = await fetch(url, {
+                headers: {
+                    'Authorization': `Bearer ${currentToken}`,
+                    'Content-Type': 'application/json'
+                }
+            });
+
+            if (!response.ok) {
+                if (response.status === 401 || response.status === 403) {
+                    alert('Session expired. Redirecting to login...');
+                    window.location.href = '/static/admin.html';
+                    return null;
+                }
+                throw new Error(`HTTP ${response.status}: ${await response.text()}`);
+            }
+
+            return await response.json();
+        }
+
+        async function loadAnalytics() {
+            const days = document.getElementById('days').value;
+            
+            try {
+                showLoading(true);
+                hideError();
+
+                const data = await makeAuthRequest(`/admin/analytics/dashboard?days=${days}`);
+                if (!data) return;
+
+                updateKPIs(data.summary);
+                updateCharts(data.analytics);
+                updateTables(data.analytics);
+                updateViolations(data.violations);
+
+                showDashboard(true);
+            } catch (error) {
+                console.error('Failed to load analytics:', error);
+                showError('Failed to load analytics data: ' + error.message);
+            } finally {
+                showLoading(false);
+            }
+        }
+
+        function updateKPIs(summary) {
+            document.getElementById('kpi-today').textContent = summary.today_requests.toLocaleString();
+            document.getElementById('kpi-month').textContent = summary.month_requests.toLocaleString();
+            document.getElementById('kpi-api-keys').textContent = summary.active_api_keys;
+            document.getElementById('kpi-domains').textContent = summary.active_domains;
+            document.getElementById('kpi-avg-daily').textContent = summary.avg_daily_requests.toFixed(1);
+        }
+
+        function updateCharts(analytics) {
+            updateUsageChart(analytics);
+            updateHourlyChart(analytics);
+        }
+
+        function updateUsageChart(analytics) {
+            const ctx = document.getElementById('usageChart').getContext('2d');
+            
+            // Prepare data
+            const dates = Object.keys(analytics.daily_usage).sort();
+            const apiKeyData = dates.map(date => analytics.daily_usage[date].api_key || 0);
+            const domainData = dates.map(date => analytics.daily_usage[date].domain || 0);
+            const totalData = dates.map(date => analytics.daily_usage[date].total || 0);
+
+            // Destroy existing chart
+            if (usageChart) {
+                usageChart.destroy();
+            }
+
+            usageChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: dates.map(date => new Date(date).toLocaleDateString()),
+                    datasets: [
+                        {
+                            label: 'Total Requests',
+                            data: totalData,
+                            borderColor: '#667eea',
+                            backgroundColor: 'rgba(102, 126, 234, 0.1)',
+                            borderWidth: 3,
+                            fill: true,
+                            tension: 0.4
+                        },
+                        {
+                            label: 'API Key Requests',
+                            data: apiKeyData,
+                            borderColor: '#28a745',
+                            backgroundColor: 'rgba(40, 167, 69, 0.1)',
+                            borderWidth: 2,
+                            fill: false,
+                            tension: 0.4
+                        },
+                        {
+                            label: 'Domain Requests',
+                            data: domainData,
+                            borderColor: '#ffc107',
+                            backgroundColor: 'rgba(255, 193, 7, 0.1)',
+                            borderWidth: 2,
+                            fill: false,
+                            tension: 0.4
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            grid: {
+                                color: 'rgba(0,0,0,0.1)'
+                            }
+                        },
+                        x: {
+                            grid: {
+                                color: 'rgba(0,0,0,0.1)'
+                            }
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            position: 'top',
+                        }
+                    }
+                }
+            });
+        }
+
+        function updateHourlyChart(analytics) {
+            const ctx = document.getElementById('hourlyChart').getContext('2d');
+            
+            // Prepare hourly data (0-23 hours)
+            const hours = Array.from({length: 24}, (_, i) => i);
+            const hourlyData = hours.map(hour => analytics.hourly_distribution[hour] || 0);
+
+            // Destroy existing chart
+            if (hourlyChart) {
+                hourlyChart.destroy();
+            }
+
+            hourlyChart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: hours.map(h => `${h}:00`),
+                    datasets: [{
+                        label: 'Requests',
+                        data: hourlyData,
+                        backgroundColor: 'rgba(102, 126, 234, 0.8)',
+                        borderColor: '#667eea',
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            grid: {
+                                color: 'rgba(0,0,0,0.1)'
+                            }
+                        },
+                        x: {
+                            grid: {
+                                color: 'rgba(0,0,0,0.1)'
+                            }
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            display: false
+                        }
+                    }
+                }
+            });
+        }
+
+        function updateTables(analytics) {
+            // Update API Keys table
+            const apiKeysTable = document.getElementById('api-keys-table');
+            apiKeysTable.innerHTML = '';
+            
+            if (analytics.top_api_keys.length === 0) {
+                apiKeysTable.innerHTML = '<tr><td colspan="4">No API key usage data available</td></tr>';
+            } else {
+                analytics.top_api_keys.forEach(key => {
+                    const row = document.createElement('tr');
+                    row.innerHTML = `
+                        <td><strong>${key.name}</strong></td>
+                        <td>${key.description}</td>
+                        <td><strong>${key.requests.toLocaleString()}</strong></td>
+                        <td><span class="status-indicator status-healthy"></span>Active</td>
+                    `;
+                    apiKeysTable.appendChild(row);
+                });
+            }
+
+            // Update Domains table
+            const domainsTable = document.getElementById('domains-table');
+            domainsTable.innerHTML = '';
+            
+            if (analytics.top_domains.length === 0) {
+                domainsTable.innerHTML = '<tr><td colspan="4">No domain usage data available</td></tr>';
+            } else {
+                analytics.top_domains.forEach(domain => {
+                    const row = document.createElement('tr');
+                    row.innerHTML = `
+                        <td><strong>${domain.domain}</strong></td>
+                        <td>${domain.description}</td>
+                        <td><strong>${domain.requests.toLocaleString()}</strong></td>
+                        <td><span class="status-indicator status-healthy"></span>Active</td>
+                    `;
+                    domainsTable.appendChild(row);
+                });
+            }
+        }
+
+        function updateViolations(violations) {
+            const violationsContent = document.getElementById('violations-content');
+            
+            const hasViolations = violations.api_key_violations.length > 0 || violations.domain_violations.length > 0;
+            
+            if (!hasViolations) {
+                violationsContent.innerHTML = '<div class="no-violations">✅ No recent rate limit violations detected</div>';
+                return;
+            }
+
+            let html = '';
+            
+            if (violations.api_key_violations.length > 0) {
+                html += '<h4 style="color: #dc3545; margin-bottom: 10px;">🔑 API Key Violations:</h4>';
+                html += '<table class="table">';
+                html += '<thead><tr><th>API Key</th><th>Usage</th><th>Limit</th><th>Violation %</th></tr></thead><tbody>';
+                
+                violations.api_key_violations.forEach(violation => {
+                    html += `
+                        <tr>
+                            <td>${violation.name}</td>
+                            <td>${violation.max_usage.toLocaleString()}</td>
+                            <td>${violation.daily_limit.toLocaleString()}</td>
+                            <td><strong style="color: #dc3545;">${violation.violation_percentage}%</strong></td>
+                        </tr>
+                    `;
+                });
+                
+                html += '</tbody></table><br>';
+            }
+
+            if (violations.domain_violations.length > 0) {
+                html += '<h4 style="color: #dc3545; margin-bottom: 10px;">🌐 Domain Violations:</h4>';
+                html += '<table class="table">';
+                html += '<thead><tr><th>Domain</th><th>Usage</th><th>Limit</th><th>Violation %</th></tr></thead><tbody>';
+                
+                violations.domain_violations.forEach(violation => {
+                    html += `
+                        <tr>
+                            <td>${violation.domain}</td>
+                            <td>${violation.max_usage.toLocaleString()}</td>
+                            <td>${violation.daily_limit.toLocaleString()}</td>
+                            <td><strong style="color: #dc3545;">${violation.violation_percentage}%</strong></td>
+                        </tr>
+                    `;
+                });
+                
+                html += '</tbody></table>';
+            }
+            
+            violationsContent.innerHTML = html;
+        }
+
+        function showLoading(show) {
+            document.getElementById('loading').style.display = show ? 'block' : 'none';
+        }
+
+        function showDashboard(show) {
+            document.getElementById('dashboard').style.display = show ? 'block' : 'none';
+        }
+
+        function showError(message) {
+            const errorDiv = document.getElementById('error-message');
+            errorDiv.textContent = message;
+            errorDiv.style.display = 'block';
+        }
+
+        function hideError() {
+            document.getElementById('error-message').style.display = 'none';
+        }
+
+        function refreshData() {
+            loadAnalytics();
+        }
+
+        // Initialize on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            if (!currentToken) {
+                alert('No authentication token found. Redirecting to login...');
+                window.location.href = '/static/admin.html';
+                return;
+            }
+            
+            loadAnalytics();
+        });
+    </script>
+</body>
+</html>
