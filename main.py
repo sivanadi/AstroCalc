@@ -1879,19 +1879,68 @@ def check_domain_authorization(request: Request):
 
 def verify_access(request: Request, api_key: str = Depends(verify_api_key)):
     """Verify API key - secure authentication required for all API access"""
-    # API key is required for all access - no spoofable domain authorization
+    diagnostic_info = {
+        'key_exists': False,
+        'key_active': False,
+        'key_hash_prefix': '',
+        'rl_minute': 0,
+        'rl_day': 0,
+        'rl_month': 0,
+        'rl_minute_limit': 0,
+        'rl_day_limit': 0,
+        'rl_month_limit': 0,
+    }
+    
+    # Check if API key enforcement is bypassed
+    api_key_enforcement_enabled = get_setting_bool('api_key_enforcement_enabled', True)
+    bypass_active = is_bypass_active(request)
+    
+    # If API key enforcement is disabled or bypass is active, allow access with logging
+    if not api_key_enforcement_enabled or bypass_active:
+        outcome = 'bypass_active' if bypass_active else 'enforcement_disabled'
+        reason_code = 'DIAG_BYPASS' if bypass_active else 'ENFORCEMENT_OFF'
+        
+        # Still try to gather diagnostic info if API key is provided
+        if api_key:
+            try:
+                key_hash = hashlib.sha256(api_key.encode()).hexdigest()
+                diagnostic_info['key_hash_prefix'] = key_hash[:8]
+                key_limits = get_api_key_limits(key_hash)
+                if key_limits:
+                    diagnostic_info['key_exists'] = True
+                    diagnostic_info['key_active'] = key_limits['is_active']
+                    diagnostic_info['rl_minute_limit'] = key_limits['per_minute_limit']
+                    diagnostic_info['rl_day_limit'] = key_limits['per_day_limit']
+                    diagnostic_info['rl_month_limit'] = key_limits['per_month_limit']
+            except Exception:
+                pass
+        
+        log_diagnostic(request, outcome, reason_code, **diagnostic_info)
+        return True
+    
+    # Standard API key enforcement path
     if not api_key:
+        log_diagnostic(request, 'denied', 'NO_API_KEY', **diagnostic_info)
         raise HTTPException(status_code=403, detail="Access denied. Valid API key required.")
     
     # Hash the API key to match database storage
     key_hash = hashlib.sha256(api_key.encode()).hexdigest()
+    diagnostic_info['key_hash_prefix'] = key_hash[:8]
     
     # Get API key limits from database using hash
     key_limits = get_api_key_limits(key_hash)
     if not key_limits:
+        log_diagnostic(request, 'denied', 'INVALID_KEY', **diagnostic_info)
         raise HTTPException(status_code=403, detail="Invalid API key")
     
+    diagnostic_info['key_exists'] = True
+    diagnostic_info['key_active'] = key_limits['is_active']
+    diagnostic_info['rl_minute_limit'] = key_limits['per_minute_limit']
+    diagnostic_info['rl_day_limit'] = key_limits['per_day_limit']
+    diagnostic_info['rl_month_limit'] = key_limits['per_month_limit']
+    
     if not key_limits['is_active']:
+        log_diagnostic(request, 'denied', 'KEY_INACTIVE', **diagnostic_info)
         raise HTTPException(status_code=403, detail="API key is disabled")
     
     # Check and increment rate limits using the hash for identification
@@ -1903,8 +1952,36 @@ def verify_access(request: Request, api_key: str = Depends(verify_api_key)):
     )
     
     if not success:
+        # Extract current usage from message for diagnostics
+        try:
+            if "Per-minute limit exceeded:" in message:
+                usage_part = message.split(": ")[1].split(".")[0]
+                current, limit = usage_part.split("/")
+                diagnostic_info['rl_minute'] = int(current)
+                diagnostic_info['rl_minute_limit'] = int(limit)
+                reason_code = 'RATE_LIMIT_MINUTE'
+            elif "Daily limit exceeded:" in message:
+                usage_part = message.split(": ")[1].split(".")[0]
+                current, limit = usage_part.split("/")
+                diagnostic_info['rl_day'] = int(current)
+                diagnostic_info['rl_day_limit'] = int(limit)
+                reason_code = 'RATE_LIMIT_DAY'
+            elif "Monthly limit exceeded:" in message:
+                usage_part = message.split(": ")[1].split(".")[0]
+                current, limit = usage_part.split("/")
+                diagnostic_info['rl_month'] = int(current)
+                diagnostic_info['rl_month_limit'] = int(limit)
+                reason_code = 'RATE_LIMIT_MONTH'
+            else:
+                reason_code = 'RATE_LIMIT_OTHER'
+        except Exception:
+            reason_code = 'RATE_LIMIT_PARSE_ERROR'
+        
+        log_diagnostic(request, 'denied', reason_code, **diagnostic_info)
         raise HTTPException(status_code=429, detail=f"Rate limit exceeded: {message}")
     
+    # Success - log the successful access
+    log_diagnostic(request, 'allowed', 'SUCCESS', **diagnostic_info)
     return True
 
 @app.get("/", response_class=HTMLResponse)
