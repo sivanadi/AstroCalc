@@ -2558,9 +2558,9 @@ async def get_analytics_dashboard(
     """
     # Handle special periods
     if period == "today":
-        days = 1
+        days = 1  # This will be overridden by period parameter in get_usage_analytics
     elif period == "yesterday":
-        days = 2  # Need 2 days to show yesterday's data
+        days = 1  # This will be overridden by period parameter in get_usage_analytics 
     else:
         try:
             days = int(period)
