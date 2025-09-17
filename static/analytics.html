@@ -377,8 +377,10 @@
         <h1>📊 Analytics Dashboard</h1>
         <div class="header-controls">
             <div class="date-selector">
-                <label for="days">Time Period:</label>
-                <select id="days" onchange="loadAnalytics()">
+                <label for="period">Time Period:</label>
+                <select id="period" onchange="loadAnalytics()">
+                    <option value="today">Today Only</option>
+                    <option value="yesterday">Yesterday Only</option>
                     <option value="7">Last 7 Days</option>
                     <option value="14">Last 14 Days</option>
                     <option value="30" selected>Last 30 Days</option>
@@ -421,6 +423,10 @@
             <div class="kpi-card">
                 <div class="kpi-value" id="kpi-today">-</div>
                 <div class="kpi-label">Today's Requests</div>
+            </div>
+            <div class="kpi-card">
+                <div class="kpi-value" id="kpi-yesterday">-</div>
+                <div class="kpi-label">Yesterday's Requests</div>
             </div>
             <div class="kpi-card">
                 <div class="kpi-value" id="kpi-month">-</div>
@@ -500,9 +506,16 @@
     <script>
         let usageChart = null;
         let hourlyChart = null;
-        let currentToken = localStorage.getItem('adminToken');
 
         async function makeAuthRequest(url) {
+            const currentToken = localStorage.getItem('adminToken');
+            
+            if (!currentToken) {
+                alert('No admin session found. Redirecting to login...');
+                window.location.href = '/static/admin.html';
+                return null;
+            }
+
             const response = await fetch(url, {
                 headers: {
                     'Authorization': `Bearer ${currentToken}`,
@@ -523,7 +536,7 @@
         }
 
         async function loadAnalytics() {
-            const days = document.getElementById('days').value;
+            const period = document.getElementById('period').value;
             const viewType = document.getElementById('viewType').value;
             const identifier = document.getElementById('identifier').value;
             
@@ -531,7 +544,7 @@
                 showLoading(true);
                 hideError();
 
-                let url = `/admin/analytics/dashboard?days=${days}&view_type=${viewType}`;
+                let url = `/admin/analytics/dashboard?period=${period}&view_type=${viewType}`;
                 if (identifier) {
                     url += `&identifier=${encodeURIComponent(identifier)}`;
                 }
@@ -599,6 +612,7 @@
 
         function updateKPIs(summary) {
             document.getElementById('kpi-today').textContent = summary.today_requests.toLocaleString();
+            document.getElementById('kpi-yesterday').textContent = summary.yesterday_requests.toLocaleString();
             document.getElementById('kpi-month').textContent = summary.month_requests.toLocaleString();
             document.getElementById('kpi-api-keys').textContent = summary.active_api_keys;
             document.getElementById('kpi-domains').textContent = summary.active_domains;

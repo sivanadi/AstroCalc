@@ -892,20 +892,27 @@ def get_domain_limits(domain: str):
     return None
 
 # Analytics functions
-def get_usage_analytics(days: int = 30, view_type: str = "all", identifier: Optional[str] = None):
+def get_usage_analytics(days: int = 30, view_type: str = "all", identifier: Optional[str] = None, period: Optional[str] = None):
     """Get comprehensive usage analytics for the last N days
     
     Args:
         days: Number of days to analyze
         view_type: Filter by 'all', 'api_key', or 'domain'
         identifier: Optional specific API key hash or domain to filter by
+        period: Special period handling ('today', 'yesterday', or None for normal days)
     """
     conn = sqlite3.connect('astrology_db.sqlite3')
     cursor = conn.cursor()
     
-    # Calculate date range
-    end_date = datetime.now().date()
-    start_date = end_date - timedelta(days=days)
+    # Calculate date range based on period
+    if period == "today":
+        start_date = end_date = datetime.now().date()
+    elif period == "yesterday":
+        start_date = end_date = datetime.now().date() - timedelta(days=1)
+    else:
+        # Standard date range
+        end_date = datetime.now().date()
+        start_date = end_date - timedelta(days=days)
     
     try:
         # Get daily usage for line chart
@@ -1134,6 +1141,16 @@ def get_usage_summary():
         
         today_requests = cursor.fetchone()[0] or 0
         
+        # Get yesterday's usage
+        yesterday = (datetime.now().date() - timedelta(days=1)).strftime('%Y-%m-%d')
+        cursor.execute('''
+            SELECT SUM(count) as yesterday_requests
+            FROM usage_day 
+            WHERE day_key = ?
+        ''', (yesterday,))
+        
+        yesterday_requests = cursor.fetchone()[0] or 0
+        
         # Get this month's usage
         this_month = datetime.now().strftime('%Y-%m')
         cursor.execute('''
@@ -1170,6 +1187,7 @@ def get_usage_summary():
         
         return {
             'today_requests': today_requests,
+            'yesterday_requests': yesterday_requests,
             'month_requests': month_requests,
             'active_api_keys': active_api_keys,
             'active_domains': active_domains,
@@ -2526,7 +2544,7 @@ async def delete_domain(request: Request, domain: str, admin_user: str = Depends
 # Analytics endpoints
 @app.get("/admin/analytics/dashboard")
 async def get_analytics_dashboard(
-    days: int = 30,
+    period: str = "30",
     view_type: str = "all",
     identifier: Optional[str] = None,
     admin_user: str = Depends(verify_admin_session)
@@ -2534,18 +2552,28 @@ async def get_analytics_dashboard(
     """Get comprehensive analytics data for admin dashboard
     
     Args:
-        days: Number of days to analyze (1-365)
+        period: Time period - can be 'today', 'yesterday', or number of days (1-365)
         view_type: Filter by 'all', 'api_key', or 'domain'
         identifier: Optional specific API key hash or domain to filter by
     """
-    if days < 1 or days > 365:
-        raise HTTPException(status_code=400, detail="Days must be between 1 and 365")
+    # Handle special periods
+    if period == "today":
+        days = 1
+    elif period == "yesterday":
+        days = 2  # Need 2 days to show yesterday's data
+    else:
+        try:
+            days = int(period)
+            if days < 1 or days > 365:
+                raise HTTPException(status_code=400, detail="Days must be between 1 and 365")
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Period must be 'today', 'yesterday', or a number between 1 and 365")
     
     if view_type not in ["all", "api_key", "domain"]:
         raise HTTPException(status_code=400, detail="view_type must be 'all', 'api_key', or 'domain'")
     
     try:
-        analytics = get_usage_analytics(days, view_type, identifier)
+        analytics = get_usage_analytics(days, view_type, identifier, period)
         summary = get_usage_summary()
         violations = get_rate_limit_violations()
         
@@ -2555,6 +2583,7 @@ async def get_analytics_dashboard(
             "violations": violations,
             "view_type": view_type,
             "identifier": identifier,
+            "period": period,
             "generated_at": datetime.now().isoformat()
         }
     except Exception as e:
