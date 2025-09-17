@@ -1594,8 +1594,19 @@ def bulk_update_domains(bulk_op: BulkOperation):
 def verify_api_key(credentials: HTTPAuthorizationCredentials = Depends(security)):
     """Verify API key if provided"""
     if credentials:
-        if credentials.credentials in API_KEYS:
-            return credentials.credentials
+        api_key = credentials.credentials
+        # Hash the provided API key to check against database
+        key_hash = hashlib.sha256(api_key.encode()).hexdigest()
+        
+        # Check if the key exists in the database
+        conn = sqlite3.connect('astrology_db.sqlite3')
+        cursor = conn.cursor()
+        cursor.execute('SELECT key_hash FROM api_keys WHERE key_hash = ? AND is_active = 1', (key_hash,))
+        result = cursor.fetchone()
+        conn.close()
+        
+        if result:
+            return api_key
     return None
 
 def cleanup_expired_sessions():
@@ -1675,72 +1686,34 @@ def check_domain_authorization(request: Request):
     return False
 
 def verify_access(request: Request, api_key: str = Depends(verify_api_key)):
-    """Verify API key or domain authorization and enforce rate limits"""
-    # Check API key access and rate limits
-    if api_key:
-        # Get API key limits from database
-        key_limits = get_api_key_limits(api_key)
-        if not key_limits:
-            raise HTTPException(status_code=403, detail="Invalid API key")
-        
-        if not key_limits['is_active']:
-            raise HTTPException(status_code=403, detail="API key is disabled")
-        
-        # Check and increment rate limits
-        success, message = check_and_increment_usage(
-            api_key, 'api_key',
-            key_limits['per_minute_limit'],
-            key_limits['per_day_limit'], 
-            key_limits['per_month_limit']
-        )
-        
-        if not success:
-            raise HTTPException(status_code=429, detail=f"Rate limit exceeded: {message}")
-        
-        return True
+    """Verify API key - secure authentication required for all API access"""
+    # API key is required for all access - no spoofable domain authorization
+    if not api_key:
+        raise HTTPException(status_code=403, detail="Access denied. Valid API key required.")
     
-    # Check domain authorization and rate limits
-    if check_domain_authorization(request):
-        # Get domain from request
-        host = request.headers.get("host", "").split(":")[0]
-        origin = request.headers.get("origin", "")
-        domain = host
-        
-        # If origin exists, extract domain from origin
-        if origin:
-            from urllib.parse import urlparse
-            parsed = urlparse(origin)
-            domain = parsed.netloc
-        
-        # Get domain limits from database
-        domain_limits = get_domain_limits(domain)
-        if not domain_limits:
-            # Check if any parent domain is authorized
-            for authorized_domain in get_authorized_domains():
-                if domain.endswith('.' + authorized_domain['domain']) or domain == authorized_domain['domain']:
-                    domain_limits = authorized_domain
-                    break
-        
-        if not domain_limits:
-            raise HTTPException(status_code=403, detail="Domain not authorized")
-        
-        if not domain_limits['is_active']:
-            raise HTTPException(status_code=403, detail="Domain access is disabled")
-        
-        # Check and increment rate limits for domain
-        success, message = check_and_increment_usage(
-            domain, 'domain',
-            domain_limits['per_minute_limit'],
-            domain_limits['per_day_limit'],
-            domain_limits['per_month_limit']
-        )
-        
-        if not success:
-            raise HTTPException(status_code=429, detail=f"Rate limit exceeded: {message}")
-        
-        return True
+    # Hash the API key to match database storage
+    key_hash = hashlib.sha256(api_key.encode()).hexdigest()
     
-    raise HTTPException(status_code=403, detail="Access denied. Valid API key or authorized domain required.")
+    # Get API key limits from database using hash
+    key_limits = get_api_key_limits(key_hash)
+    if not key_limits:
+        raise HTTPException(status_code=403, detail="Invalid API key")
+    
+    if not key_limits['is_active']:
+        raise HTTPException(status_code=403, detail="API key is disabled")
+    
+    # Check and increment rate limits using the hash for identification
+    success, message = check_and_increment_usage(
+        key_hash, 'api_key',
+        key_limits['per_minute_limit'],
+        key_limits['per_day_limit'], 
+        key_limits['per_month_limit']
+    )
+    
+    if not success:
+        raise HTTPException(status_code=429, detail=f"Rate limit exceeded: {message}")
+    
+    return True
 
 @app.get("/", response_class=HTMLResponse)
 async def root():
