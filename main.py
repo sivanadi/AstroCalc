@@ -29,6 +29,18 @@ async def startup_event():
     """Initialize database on startup"""
     print("Initializing database...")
     init_database()
+    
+    # Validate security configuration
+    validate_security_config()
+    
+    # Create admin user securely if needed
+    try:
+        create_admin_if_needed()
+    except ValueError as e:
+        print(f"CRITICAL SECURITY ERROR: {e}")
+        print("Application cannot start without proper admin configuration")
+        os._exit(1)  # Force exit on security error
+    
     migrate_existing_data()
     add_database_indexes()
     print("Database initialization completed")
@@ -155,12 +167,9 @@ HOUSE_SYSTEM_NAMES = {
 # Session timeout in seconds (default: 1 hour)
 SESSION_TIMEOUT = int(os.getenv('SESSION_TIMEOUT', '3600'))
 
-# More restrictive default domains - only localhost by default
-# Include Replit preview domain for testing
-replit_domain = os.getenv('REPLIT_DEV_DOMAIN', '')
+# Restrictive default domains - only localhost by default for development
+# Production should use environment variable AUTHORIZED_DOMAINS or database entries
 default_domains_list = ['localhost', '127.0.0.1']
-if replit_domain:
-    default_domains_list.append(replit_domain)
 default_domains = os.getenv('AUTHORIZED_DOMAINS', ','.join(default_domains_list))
 AUTHORIZED_DOMAINS = set(domain.strip() for domain in default_domains.split(',') if domain.strip())
 API_KEYS = {}
@@ -439,6 +448,7 @@ def init_database():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             username TEXT UNIQUE NOT NULL,
             password_hash TEXT NOT NULL,
+            must_change_password BOOLEAN DEFAULT FALSE,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
@@ -558,8 +568,8 @@ def add_database_indexes():
         print(f"Error adding indexes: {e}")
         return False
 
-def migrate_existing_data():
-    """Migrate existing in-memory data to database"""
+def create_admin_if_needed():
+    """Create admin user with secure password from environment variable"""
     conn = sqlite3.connect('astrology_db.sqlite3')
     cursor = conn.cursor()
     
@@ -567,17 +577,42 @@ def migrate_existing_data():
         # Check if admin already exists
         cursor.execute('SELECT COUNT(*) FROM admins WHERE username = ?', ('admin',))
         if cursor.fetchone()[0] == 0:
-            # Create default admin user with secure default password
-            # In production, admin should change this password immediately
-            default_password_hash = bcrypt.hashpw(b"admin123", bcrypt.gensalt()).decode('utf-8')
+            # Get admin password from environment variable
+            admin_password = os.getenv('ADMIN_PASSWORD')
+            if not admin_password:
+                print("ERROR: ADMIN_PASSWORD environment variable is required to create admin user")
+                print("Please set ADMIN_PASSWORD environment variable and restart the application")
+                raise ValueError("Missing ADMIN_PASSWORD environment variable")
+            
+            if len(admin_password) < 8:
+                print("ERROR: ADMIN_PASSWORD must be at least 8 characters long")
+                raise ValueError("ADMIN_PASSWORD too short")
+            
+            # Create admin user with secure password from environment
+            password_hash = bcrypt.hashpw(admin_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
             
             cursor.execute(
-                'INSERT INTO admins (username, password_hash) VALUES (?, ?)',
-                ('admin', default_password_hash)
+                'INSERT INTO admins (username, password_hash, must_change_password) VALUES (?, ?, ?)',
+                ('admin', password_hash, True)
             )
-            print("Seeded admin user in database with default credentials")
-            print("SECURITY: Please change the default admin password immediately after first login")
+            print("Admin user created successfully with environment-provided password")
+            print("NOTE: Admin must change password on first login")
         
+        conn.commit()
+        conn.close()
+        
+    except Exception as e:
+        print(f"Admin creation error: {e}")
+        conn.rollback()
+        conn.close()
+        raise
+
+def migrate_existing_data():
+    """Migrate existing in-memory data to database"""
+    conn = sqlite3.connect('astrology_db.sqlite3')
+    cursor = conn.cursor()
+    
+    try:
         # Migrate existing API keys from in-memory storage
         for key_hash, key_data in API_KEYS.items():
             cursor.execute('SELECT COUNT(*) FROM api_keys WHERE key_hash = ?', (key_hash,))
@@ -603,6 +638,28 @@ def migrate_existing_data():
         conn.close()
 
 # Database helper functions
+def validate_security_config():
+    """Validate security configuration at startup"""
+    # Check if admin password is set in environment when no admin exists
+    conn = sqlite3.connect('astrology_db.sqlite3')
+    cursor = conn.cursor()
+    cursor.execute('SELECT COUNT(*) FROM admins WHERE username = ?', ('admin',))
+    admin_exists = cursor.fetchone()[0] > 0
+    conn.close()
+    
+    if not admin_exists:
+        admin_password = os.getenv('ADMIN_PASSWORD')
+        if not admin_password:
+            print("SECURITY ERROR: No admin user exists and ADMIN_PASSWORD environment variable is not set")
+            print("Set ADMIN_PASSWORD environment variable to create the initial admin user")
+            raise ValueError("Missing ADMIN_PASSWORD environment variable for initial setup")
+        
+        if len(admin_password) < 8:
+            print("SECURITY ERROR: ADMIN_PASSWORD must be at least 8 characters long")
+            raise ValueError("ADMIN_PASSWORD too short (minimum 8 characters required)")
+    
+    print("Security configuration validated successfully")
+
 def get_admin_by_username(username: str):
     """Get admin user by username"""
     conn = sqlite3.connect('astrology_db.sqlite3')
@@ -615,19 +672,28 @@ def get_admin_by_username(username: str):
             'id': result[0],
             'username': result[1], 
             'password_hash': result[2],
-            'created_at': result[3],
-            'updated_at': result[4]
+            'must_change_password': bool(result[3]) if len(result) > 3 else False,
+            'created_at': result[4] if len(result) > 4 else result[3],
+            'updated_at': result[5] if len(result) > 5 else result[4] if len(result) > 4 else result[3]
         }
     return None
 
-def update_admin_password(username: str, new_password_hash: str):
-    """Update admin password"""
+def update_admin_password(username: str, new_password_hash: str, clear_change_requirement: bool = True):
+    """Update admin password and optionally clear password change requirement"""
     conn = sqlite3.connect('astrology_db.sqlite3')
     cursor = conn.cursor()
-    cursor.execute(
-        'UPDATE admins SET password_hash = ?, updated_at = CURRENT_TIMESTAMP WHERE username = ?',
-        (new_password_hash, username)
-    )
+    
+    if clear_change_requirement:
+        cursor.execute(
+            'UPDATE admins SET password_hash = ?, must_change_password = FALSE, updated_at = CURRENT_TIMESTAMP WHERE username = ?',
+            (new_password_hash, username)
+        )
+    else:
+        cursor.execute(
+            'UPDATE admins SET password_hash = ?, updated_at = CURRENT_TIMESTAMP WHERE username = ?',
+            (new_password_hash, username)
+        )
+    
     conn.commit()
     success = cursor.rowcount > 0
     conn.close()
@@ -2294,18 +2360,30 @@ async def admin_login(login_data: AdminLogin):
     # Get admin from database
     admin_user = get_admin_by_username(login_data.username)
     if admin_user and verify_password(login_data.password, admin_user['password_hash']):
+        # Check if password change is required
+        must_change_password = admin_user.get('must_change_password', False)
+        
         # Generate secure session token
         token = secrets.token_urlsafe(32)
         ACTIVE_SESSIONS[token] = {
             'username': login_data.username,
             'created_at': datetime.now(),
-            'last_activity': datetime.now()
+            'last_activity': datetime.now(),
+            'password_change_required': must_change_password
         }
-        return {
+        
+        response = {
             "token": token, 
             "message": "Login successful",
-            "expires_in": SESSION_TIMEOUT
+            "expires_in": SESSION_TIMEOUT,
+            "password_change_required": must_change_password
         }
+        
+        if must_change_password:
+            response["message"] = "Login successful - Password change required"
+            response["warning"] = "You must change your password before accessing admin functions"
+        
+        return response
     else:
         # Add a small delay to prevent timing attacks
         import time
@@ -2340,8 +2418,13 @@ async def admin_password_change(password_data: PasswordChangeRequest, username: 
     # Generate new password hash
     new_password_hash = bcrypt.hashpw(new_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
     
-    # Update password in database
-    if update_admin_password(username, new_password_hash):
+    # Update password in database and clear change requirement
+    if update_admin_password(username, new_password_hash, clear_change_requirement=True):
+        # Update active sessions to remove password change requirement
+        for token, session_data in ACTIVE_SESSIONS.items():
+            if session_data['username'] == username:
+                session_data['password_change_required'] = False
+        
         return {"message": "Password changed successfully"}
     else:
         raise HTTPException(status_code=500, detail="Failed to update password")
