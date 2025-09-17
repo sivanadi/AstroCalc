@@ -613,12 +613,88 @@
                 });
                 
                 if (response.ok) {
+                    const data = await response.json();
+                    
+                    // Display the newly created API key prominently
+                    const apiKeysList = document.getElementById('apiKeysList');
+                    const newKeyAlert = document.createElement('div');
+                    newKeyAlert.style.cssText = 'background: #d4edda; border: 1px solid #c3e6cb; border-radius: 8px; padding: 20px; margin: 20px 0; border-left: 4px solid #28a745;';
+                    
+                    const alertTitle = document.createElement('h4');
+                    alertTitle.style.cssText = 'margin: 0 0 15px 0; color: #155724;';
+                    alertTitle.innerHTML = '🎉 New API Key Created Successfully!';
+                    
+                    const alertText = document.createElement('p');
+                    alertText.style.cssText = 'margin: 10px 0; color: #155724; font-weight: 600;';
+                    alertText.textContent = 'IMPORTANT: Copy this API key now. You won\'t be able to see it again!';
+                    
+                    const keyContainer = document.createElement('div');
+                    keyContainer.style.cssText = 'background: #f8f9fa; border: 1px solid #dee2e6; border-radius: 5px; padding: 15px; margin: 10px 0; font-family: monospace; word-break: break-all; position: relative;';
+                    
+                    const keyLabel = document.createElement('div');
+                    keyLabel.style.cssText = 'font-size: 14px; color: #6c757d; margin-bottom: 5px; font-family: sans-serif;';
+                    keyLabel.textContent = 'Your API Key:';
+                    
+                    const keyValue = document.createElement('div');
+                    keyValue.style.cssText = 'font-size: 16px; color: #212529; font-weight: 600; user-select: all; cursor: pointer;';
+                    keyValue.textContent = data.api_key;
+                    keyValue.onclick = function() {
+                        navigator.clipboard.writeText(data.api_key).then(() => {
+                            const originalText = keyValue.textContent;
+                            keyValue.textContent = '✓ Copied to clipboard!';
+                            keyValue.style.color = '#28a745';
+                            setTimeout(() => {
+                                keyValue.textContent = originalText;
+                                keyValue.style.color = '#212529';
+                            }, 2000);
+                        });
+                    };
+                    
+                    const copyBtn = document.createElement('button');
+                    copyBtn.textContent = 'Copy to Clipboard';
+                    copyBtn.style.cssText = 'background: #28a745; color: white; border: none; padding: 8px 16px; border-radius: 4px; margin-top: 10px; cursor: pointer; font-size: 14px;';
+                    copyBtn.onclick = function() {
+                        navigator.clipboard.writeText(data.api_key).then(() => {
+                            copyBtn.textContent = '✓ Copied!';
+                            copyBtn.style.background = '#20c997';
+                            setTimeout(() => {
+                                copyBtn.textContent = 'Copy to Clipboard';
+                                copyBtn.style.background = '#28a745';
+                            }, 2000);
+                        });
+                    };
+                    
+                    const dismissBtn = document.createElement('button');
+                    dismissBtn.textContent = '× Dismiss';
+                    dismissBtn.style.cssText = 'background: #6c757d; color: white; border: none; padding: 8px 16px; border-radius: 4px; margin: 10px 0 0 10px; cursor: pointer; font-size: 14px;';
+                    dismissBtn.onclick = function() {
+                        newKeyAlert.remove();
+                    };
+                    
+                    keyContainer.appendChild(keyLabel);
+                    keyContainer.appendChild(keyValue);
+                    
+                    newKeyAlert.appendChild(alertTitle);
+                    newKeyAlert.appendChild(alertText);
+                    newKeyAlert.appendChild(keyContainer);
+                    newKeyAlert.appendChild(copyBtn);
+                    newKeyAlert.appendChild(dismissBtn);
+                    
+                    // Insert at the top of the API keys section
+                    apiKeysList.insertBefore(newKeyAlert, apiKeysList.firstChild);
+                    
+                    // Clear the form
                     document.getElementById('keyName').value = '';
                     document.getElementById('keyDesc').value = '';
                     document.getElementById('keyPerMinute').value = '60';
                     document.getElementById('keyPerDay').value = '1000';
                     document.getElementById('keyPerMonth').value = '30000';
+                    
+                    // Reload the keys list
                     loadApiKeys();
+                    
+                    // Scroll to the new key alert
+                    newKeyAlert.scrollIntoView({ behavior: 'smooth', block: 'center' });
                 }
             } catch (error) {
                 console.error('Failed to create API key');
