@@ -269,6 +269,9 @@
             event.preventDefault();
             const name = document.getElementById('keyName').value;
             const description = document.getElementById('keyDesc').value;
+            const per_minute_limit = parseInt(document.getElementById('keyPerMinute').value) || 60;
+            const per_day_limit = parseInt(document.getElementById('keyPerDay').value) || 1000;
+            const per_month_limit = parseInt(document.getElementById('keyPerMonth').value) || 30000;
             
             try {
                 const response = await fetch('/admin/api-keys', {
@@ -277,12 +280,21 @@
                         'Content-Type': 'application/json',
                         'Authorization': 'Bearer ' + sessionToken
                     },
-                    body: JSON.stringify({ name, description })
+                    body: JSON.stringify({ 
+                        name, 
+                        description, 
+                        per_minute_limit,
+                        per_day_limit,
+                        per_month_limit
+                    })
                 });
                 
                 if (response.ok) {
                     document.getElementById('keyName').value = '';
                     document.getElementById('keyDesc').value = '';
+                    document.getElementById('keyPerMinute').value = '60';
+                    document.getElementById('keyPerDay').value = '1000';
+                    document.getElementById('keyPerMonth').value = '30000';
                     loadApiKeys();
                 }
             } catch (error) {
@@ -293,6 +305,9 @@
         async function addDomain(event) {
             event.preventDefault();
             const domain = document.getElementById('domainName').value;
+            const per_minute_limit = parseInt(document.getElementById('domainPerMinute').value) || 10;
+            const per_day_limit = parseInt(document.getElementById('domainPerDay').value) || 100;
+            const per_month_limit = parseInt(document.getElementById('domainPerMonth').value) || 3000;
             
             try {
                 const response = await fetch('/admin/domains', {
@@ -301,11 +316,19 @@
                         'Content-Type': 'application/json',
                         'Authorization': 'Bearer ' + sessionToken
                     },
-                    body: JSON.stringify({ domain })
+                    body: JSON.stringify({ 
+                        domain,
+                        per_minute_limit,
+                        per_day_limit,
+                        per_month_limit
+                    })
                 });
                 
                 if (response.ok) {
                     document.getElementById('domainName').value = '';
+                    document.getElementById('domainPerMinute').value = '10';
+                    document.getElementById('domainPerDay').value = '100';
+                    document.getElementById('domainPerMonth').value = '3000';
                     loadDomains();
                 }
             } catch (error) {
