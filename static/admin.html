@@ -442,6 +442,7 @@
             document.getElementById('adminPanel').style.display = 'block';
             loadApiKeys();
             loadDomains();
+            loadDiagnosticStatus();
         }
         
         async function loadApiKeys() {
@@ -730,6 +731,421 @@
             localStorage.removeItem('adminToken');
             location.reload();
         }
+        
+        // Diagnosis Functions
+        async function loadDiagnosticStatus() {
+            try {
+                const response = await fetch('/admin/diagnostics/status', {
+                    headers: { 'Authorization': 'Bearer ' + sessionToken }
+                });
+                
+                if (response.status === 401) {
+                    localStorage.removeItem('adminToken');
+                    location.reload();
+                    return;
+                }
+                const data = await response.json();
+                
+                const statusDiv = document.getElementById('diagnosticStatus');
+                statusDiv.textContent = ''; // Clear existing content
+                
+                const enforcementStatus = data.api_key_enforcement_enabled ? 'ENABLED' : 'DISABLED';
+                const enforcementColor = data.api_key_enforcement_enabled ? '#28a745' : '#dc3545';
+                
+                // Create safe DOM structure to prevent XSS
+                const gridContainer = document.createElement('div');
+                gridContainer.style.cssText = 'display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px;';
+                
+                // Enforcement status card
+                const enforcementCard = document.createElement('div');
+                enforcementCard.style.cssText = `background: white; padding: 10px; border-radius: 5px; border-left: 3px solid ${enforcementColor};`;
+                
+                const enforcementLabel = document.createElement('strong');
+                enforcementLabel.textContent = 'API Key Enforcement:';
+                const enforcementBreak = document.createElement('br');
+                const enforcementValue = document.createElement('span');
+                enforcementValue.style.cssText = `color: ${enforcementColor}; font-weight: 600;`;
+                enforcementValue.textContent = enforcementStatus;
+                
+                enforcementCard.appendChild(enforcementLabel);
+                enforcementCard.appendChild(enforcementBreak);
+                enforcementCard.appendChild(enforcementValue);
+                gridContainer.appendChild(enforcementCard);
+                
+                // Environment card
+                const envCard = document.createElement('div');
+                envCard.style.cssText = 'background: white; padding: 10px; border-radius: 5px; border-left: 3px solid #17a2b8;';
+                
+                const envLabel = document.createElement('strong');
+                envLabel.textContent = 'Environment:';
+                const envBreak = document.createElement('br');
+                const envValue = document.createElement('span');
+                envValue.style.cssText = 'color: #17a2b8; font-weight: 600;';
+                envValue.textContent = data.environment.toUpperCase(); // Safe: textContent prevents XSS
+                
+                envCard.appendChild(envLabel);
+                envCard.appendChild(envBreak);
+                envCard.appendChild(envValue);
+                gridContainer.appendChild(envCard);
+                
+                // Bypass card (if active)
+                if (data.bypass_enabled) {
+                    const expiresAt = new Date(data.bypass_expires_at);
+                    const now = new Date();
+                    const timeLeft = Math.max(0, Math.floor((expiresAt - now) / 60000));
+                    
+                    const bypassCard = document.createElement('div');
+                    bypassCard.style.cssText = 'background: white; padding: 10px; border-radius: 5px; border-left: 3px solid #ffc107;';
+                    
+                    const bypassLabel = document.createElement('strong');
+                    bypassLabel.textContent = 'Bypass Active:';
+                    const bypassBreak = document.createElement('br');
+                    const bypassValue = document.createElement('span');
+                    bypassValue.style.cssText = 'color: #856404; font-weight: 600;';
+                    bypassValue.textContent = `${timeLeft} min left`;
+                    
+                    bypassCard.appendChild(bypassLabel);
+                    bypassCard.appendChild(bypassBreak);
+                    bypassCard.appendChild(bypassValue);
+                    gridContainer.appendChild(bypassCard);
+                }
+                
+                statusDiv.appendChild(gridContainer);
+                
+                // Update radio buttons
+                const enableRadio = document.querySelector('input[name="enforcement"][value="enable"]');
+                const disableRadio = document.querySelector('input[name="enforcement"][value="disable"]');
+                
+                if (data.api_key_enforcement_enabled) {
+                    enableRadio.checked = true;
+                    document.getElementById('bypassSettings').style.display = 'none';
+                } else {
+                    disableRadio.checked = true;
+                    document.getElementById('bypassSettings').style.display = 'block';
+                }
+                
+            } catch (error) {
+                console.error('Failed to load diagnostic status:', error);
+                const statusDiv = document.getElementById('diagnosticStatus');
+                statusDiv.textContent = '';
+                const errorDiv = document.createElement('div');
+                errorDiv.style.color = '#dc3545';
+                errorDiv.textContent = 'Failed to load diagnostic status';
+                statusDiv.appendChild(errorDiv);
+            }
+        }
+        
+        async function toggleEnforcement(event) {
+            event.preventDefault();
+            const formData = new FormData(event.target);
+            const enforcement = formData.get('enforcement');
+            const enabled = enforcement === 'enable';
+            
+            // Add confirmation dialog for disabling enforcement
+            if (!enabled) {
+                const confirmed = confirm(
+                    'WARNING: This will disable API key enforcement across the entire system. ' +
+                    'Are you sure you want to proceed? This action should only be used for debugging.'
+                );
+                if (!confirmed) {
+                    return;
+                }
+            }
+            
+            const requestBody = { enabled };
+            
+            if (!enabled) {
+                const duration = parseInt(document.getElementById('bypassDuration').value);
+                const allowedIPs = document.getElementById('allowedIPs').value.trim();
+                
+                if (!duration || duration < 1) {
+                    const messageDiv = document.getElementById('toggleMessage');
+                    messageDiv.textContent = '';
+                    const errorDiv = document.createElement('div');
+                    errorDiv.className = 'error';
+                    errorDiv.textContent = 'Duration is required when disabling enforcement';
+                    messageDiv.appendChild(errorDiv);
+                    return;
+                }
+                
+                requestBody.duration_minutes = duration;
+                if (allowedIPs) {
+                    requestBody.allowed_ips = allowedIPs;
+                }
+            }
+            
+            try {
+                const response = await fetch('/admin/diagnostics/toggle', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': 'Bearer ' + sessionToken
+                    },
+                    body: JSON.stringify(requestBody)
+                });
+                
+                const data = await response.json();
+                const messageDiv = document.getElementById('toggleMessage');
+                messageDiv.textContent = '';
+                
+                if (response.ok) {
+                    const successDiv = document.createElement('div');
+                    successDiv.className = 'success';
+                    successDiv.textContent = data.message;
+                    messageDiv.appendChild(successDiv);
+                    loadDiagnosticStatus(); // Refresh status
+                } else if (response.status === 401) {
+                    localStorage.removeItem('adminToken');
+                    location.reload();
+                } else {
+                    const errorDiv = document.createElement('div');
+                    errorDiv.className = 'error';
+                    errorDiv.textContent = data.detail;
+                    messageDiv.appendChild(errorDiv);
+                }
+            } catch (error) {
+                console.error('Failed to toggle enforcement:', error);
+                const messageDiv = document.getElementById('toggleMessage');
+                messageDiv.textContent = '';
+                const errorDiv = document.createElement('div');
+                errorDiv.className = 'error';
+                errorDiv.textContent = 'Failed to update enforcement settings';
+                messageDiv.appendChild(errorDiv);
+            }
+        }
+        
+        async function runTest(event, testType) {
+            event.preventDefault();
+            
+            const requestBody = { test_type: testType };
+            
+            if (testType === 'api_key') {
+                const apiKey = document.getElementById('testApiKey').value.trim();
+                if (!apiKey) {
+                    const resultsDiv = document.getElementById('testResults');
+                    resultsDiv.textContent = '';
+                    const errorDiv = document.createElement('div');
+                    errorDiv.style.color = '#dc3545';
+                    errorDiv.textContent = 'Please enter an API key to test';
+                    resultsDiv.appendChild(errorDiv);
+                    return;
+                }
+                requestBody.api_key = apiKey;
+            }
+            
+            try {
+                const response = await fetch('/admin/diagnostics/test', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': 'Bearer ' + sessionToken
+                    },
+                    body: JSON.stringify(requestBody)
+                });
+                
+                if (response.status === 401) {
+                    localStorage.removeItem('adminToken');
+                    location.reload();
+                    return;
+                }
+                
+                const data = await response.json();
+                const resultsDiv = document.getElementById('testResults');
+                
+                if (response.ok) {
+                    // Create safe DOM structure instead of innerHTML
+                    const resultsDiv = document.getElementById('testResults');
+                    resultsDiv.textContent = '';
+                    
+                    const containerDiv = document.createElement('div');
+                    containerDiv.style.cssText = 'background: white; border: 1px solid #dee2e6; border-radius: 5px; padding: 15px; margin-top: 10px;';
+                    
+                    const titleEl = document.createElement('h5');
+                    titleEl.style.cssText = 'margin: 0 0 10px 0; color: #495057;';
+                    titleEl.textContent = 'Test Results';
+                    containerDiv.appendChild(titleEl);
+                    
+                    data.results.forEach(result => {
+                        const color = result.result === 'PASS' ? '#28a745' : 
+                                    result.result === 'FAIL' ? '#dc3545' : '#17a2b8';
+                        
+                        const resultDiv = document.createElement('div');
+                        resultDiv.style.cssText = `margin: 8px 0; padding: 8px; background: #f8f9fa; border-radius: 3px; border-left: 3px solid ${color};`;
+                        
+                        const testLabel = document.createElement('strong');
+                        testLabel.textContent = result.test + ': ';
+                        
+                        const resultSpan = document.createElement('span');
+                        resultSpan.style.cssText = `color: ${color}; font-weight: 600;`;
+                        resultSpan.textContent = result.result;
+                        
+                        const detailsEl = document.createElement('small');
+                        detailsEl.style.cssText = 'color: #6c757d; display: block;';
+                        detailsEl.textContent = result.details;
+                        
+                        resultDiv.appendChild(testLabel);
+                        resultDiv.appendChild(resultSpan);
+                        resultDiv.appendChild(document.createElement('br'));
+                        resultDiv.appendChild(detailsEl);
+                        containerDiv.appendChild(resultDiv);
+                    });
+                    
+                    const timestampEl = document.createElement('small');
+                    timestampEl.style.color = '#6c757d';
+                    timestampEl.textContent = `Test completed at: ${new Date(data.timestamp).toLocaleString()}`;
+                    containerDiv.appendChild(timestampEl);
+                    
+                    resultsDiv.appendChild(containerDiv);
+                } else {
+                    const resultsDiv = document.getElementById('testResults');
+                    resultsDiv.textContent = '';
+                    const errorDiv = document.createElement('div');
+                    errorDiv.style.cssText = 'color: #dc3545; margin-top: 10px;';
+                    errorDiv.textContent = `Test failed: ${data.detail}`;
+                    resultsDiv.appendChild(errorDiv);
+                }
+            } catch (error) {
+                console.error('Failed to run test:', error);
+                const resultsDiv = document.getElementById('testResults');
+                resultsDiv.textContent = '';
+                const errorDiv = document.createElement('div');
+                errorDiv.style.cssText = 'color: #dc3545; margin-top: 10px;';
+                errorDiv.textContent = 'Failed to run diagnostic test';
+                resultsDiv.appendChild(errorDiv);
+            }
+        }
+        
+        async function loadDiagnosticLogs() {
+            const outcomeFilter = document.getElementById('logOutcomeFilter').value;
+            const ipFilter = document.getElementById('logIpFilter').value.trim();
+            
+            let url = '/admin/diagnostics/logs?page=1&page_size=20';
+            if (outcomeFilter) url += `&outcome=${encodeURIComponent(outcomeFilter)}`;
+            if (ipFilter) url += `&client_ip=${encodeURIComponent(ipFilter)}`;
+            
+            try {
+                const response = await fetch(url, {
+                    headers: { 'Authorization': 'Bearer ' + sessionToken }
+                });
+                
+                if (response.status === 401) {
+                    localStorage.removeItem('adminToken');
+                    location.reload();
+                    return;
+                }
+                const data = await response.json();
+                
+                const logsDiv = document.getElementById('diagnosticLogs');
+                
+                if (data.logs && data.logs.length > 0) {
+                    // Create safe DOM structure to prevent XSS from user-controlled log data
+                    const logsDiv = document.getElementById('diagnosticLogs');
+                    logsDiv.textContent = '';
+                    
+                    const headerDiv = document.createElement('div');
+                    headerDiv.style.cssText = 'padding: 10px; background: #f8f9fa; border-bottom: 1px solid #dee2e6; font-weight: 600; color: #495057;';
+                    headerDiv.textContent = `Showing ${data.logs.length} of ${data.total} logs`;
+                    logsDiv.appendChild(headerDiv);
+                    
+                    data.logs.forEach(log => {
+                        const outcomeColor = log.outcome === 'allowed' ? '#28a745' : 
+                                           log.outcome === 'denied' ? '#dc3545' : '#ffc107';
+                        const timestamp = new Date(log.ts).toLocaleString();
+                        
+                        const logDiv = document.createElement('div');
+                        logDiv.style.cssText = 'padding: 12px; border-bottom: 1px solid #e9ecef; font-size: 13px;';
+                        
+                        const headerRow = document.createElement('div');
+                        headerRow.style.cssText = 'display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;';
+                        
+                        const pathSpan = document.createElement('span');
+                        pathSpan.style.cssText = 'font-weight: 600; color: #495057;';
+                        pathSpan.textContent = log.path; // Safe: textContent prevents XSS
+                        
+                        const outcomeSpan = document.createElement('span');
+                        outcomeSpan.style.cssText = `background: ${outcomeColor}; color: white; padding: 2px 8px; border-radius: 3px; font-size: 11px; text-transform: uppercase;`;
+                        outcomeSpan.textContent = log.outcome; // Safe: textContent prevents XSS
+                        
+                        headerRow.appendChild(pathSpan);
+                        headerRow.appendChild(outcomeSpan);
+                        logDiv.appendChild(headerRow);
+                        
+                        const detailsDiv = document.createElement('div');
+                        detailsDiv.style.cssText = 'color: #6c757d; display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px;';
+                        
+                        const ipSpan = document.createElement('span');
+                        const ipLabel = document.createElement('strong');
+                        ipLabel.textContent = 'IP: ';
+                        ipSpan.appendChild(ipLabel);
+                        ipSpan.appendChild(document.createTextNode(log.client_ip)); // Safe: prevents XSS from malicious IPs
+                        detailsDiv.appendChild(ipSpan);
+                        
+                        const timeSpan = document.createElement('span');
+                        const timeLabel = document.createElement('strong');
+                        timeLabel.textContent = 'Time: ';
+                        timeSpan.appendChild(timeLabel);
+                        timeSpan.appendChild(document.createTextNode(timestamp));
+                        detailsDiv.appendChild(timeSpan);
+                        
+                        if (log.key_hash_prefix) {
+                            const keySpan = document.createElement('span');
+                            const keyLabel = document.createElement('strong');
+                            keyLabel.textContent = 'Key: ';
+                            keySpan.appendChild(keyLabel);
+                            keySpan.appendChild(document.createTextNode(log.key_hash_prefix + '...'));
+                            detailsDiv.appendChild(keySpan);
+                        }
+                        
+                        if (log.reason_code) {
+                            const reasonSpan = document.createElement('span');
+                            const reasonLabel = document.createElement('strong');
+                            reasonLabel.textContent = 'Reason: ';
+                            reasonSpan.appendChild(reasonLabel);
+                            reasonSpan.appendChild(document.createTextNode(log.reason_code)); // Safe: prevents XSS from reason codes
+                            detailsDiv.appendChild(reasonSpan);
+                        }
+                        
+                        logDiv.appendChild(detailsDiv);
+                        logsDiv.appendChild(logDiv);
+                    });
+                } else {
+                    const logsDiv = document.getElementById('diagnosticLogs');
+                    logsDiv.textContent = '';
+                    const emptyDiv = document.createElement('div');
+                    emptyDiv.style.cssText = 'text-align: center; padding: 20px; color: #6c757d;';
+                    emptyDiv.textContent = 'No diagnostic logs found matching your filters';
+                    logsDiv.appendChild(emptyDiv);
+                }
+            } catch (error) {
+                console.error('Failed to load diagnostic logs:', error);
+                const logsDiv = document.getElementById('diagnosticLogs');
+                logsDiv.textContent = '';
+                const errorDiv = document.createElement('div');
+                errorDiv.style.cssText = 'text-align: center; padding: 20px; color: #dc3545;';
+                errorDiv.textContent = 'Failed to load diagnostic logs';
+                logsDiv.appendChild(errorDiv);
+            }
+        }
+        
+        // Add event listeners for bypass settings toggle
+        document.addEventListener('DOMContentLoaded', function() {
+            // Add immediate radio button change handlers
+            const enforcementRadios = document.querySelectorAll('input[name="enforcement"]');
+            enforcementRadios.forEach(radio => {
+                radio.addEventListener('change', function() {
+                    const bypassSettings = document.getElementById('bypassSettings');
+                    if (this.value === 'disable') {
+                        bypassSettings.style.display = 'block';
+                        // Ensure duration field is focused for user convenience
+                        setTimeout(() => {
+                            document.getElementById('bypassDuration').focus();
+                        }, 100);
+                    } else {
+                        bypassSettings.style.display = 'none';
+                    }
+                });
+            });
+        });
     </script>
 </body>
 </html>
