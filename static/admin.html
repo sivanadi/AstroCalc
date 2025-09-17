@@ -68,6 +68,110 @@
             border-left: 4px solid #667eea;
         }
         
+        /* Enhanced Form Layouts */
+        .form-group {
+            margin-bottom: 20px;
+        }
+        .form-row {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+        .form-row input {
+            margin: 0;
+        }
+        .limits-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 10px;
+            margin: 15px 0;
+        }
+        .limits-grid input {
+            margin: 0;
+        }
+        .form-label {
+            font-weight: 600;
+            color: #495057;
+            margin-bottom: 8px;
+            display: block;
+            font-size: 14px;
+        }
+        
+        /* Clean Item Cards */
+        .item-card {
+            background: white;
+            border: 1px solid #e9ecef;
+            border-radius: 8px;
+            padding: 16px;
+            margin: 10px 0;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+        .item-card:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+        }
+        .item-header {
+            display: flex;
+            justify-content: between;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+        .item-title {
+            font-weight: 600;
+            color: #343a40;
+            font-size: 16px;
+            margin: 0;
+        }
+        .item-subtitle {
+            color: #6c757d;
+            font-size: 14px;
+            margin: 4px 0;
+        }
+        .item-meta {
+            color: #868e96;
+            font-size: 12px;
+            display: flex;
+            gap: 15px;
+            margin: 8px 0;
+        }
+        .item-actions {
+            margin-top: 12px;
+            text-align: right;
+        }
+        .btn-danger {
+            background: #dc3545;
+            padding: 6px 12px;
+            font-size: 12px;
+            border-radius: 4px;
+            margin: 0;
+        }
+        .btn-danger:hover {
+            background: #c82333;
+            transform: none;
+            box-shadow: none;
+        }
+        
+        /* Section Headers */
+        .section h3 {
+            margin-top: 0;
+            margin-bottom: 20px;
+            color: #495057;
+            border-bottom: 2px solid #e9ecef;
+            padding-bottom: 10px;
+        }
+        
+        /* Lists Container */
+        .items-container {
+            margin-top: 25px;
+        }
+        .items-title {
+            font-weight: 600;
+            color: #495057;
+            margin-bottom: 15px;
+            font-size: 18px;
+        }
+        
         /* Responsive Design */
         @media (max-width: 768px) {
             body { padding: 10px; }
@@ -82,6 +186,17 @@
             input, button {
                 padding: 15px;
                 font-size: 16px;
+            }
+            .limits-grid {
+                grid-template-columns: 1fr;
+            }
+            .form-row {
+                flex-direction: column;
+                gap: 5px;
+            }
+            .item-meta {
+                flex-direction: column;
+                gap: 5px;
             }
         }
         
@@ -108,36 +223,51 @@
         <h1>Admin Panel</h1>
         
         <div class="section">
-            <h3>API Keys</h3>
+            <h3>🔑 API Keys Management</h3>
             <form onsubmit="createApiKey(event)">
-                <input type="text" id="keyName" placeholder="API Key Name" required>
-                <input type="text" id="keyDesc" placeholder="Description (optional)">
-                <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin: 8px 0;">
-                    <input type="number" id="keyPerMinute" placeholder="Per minute limit" min="1" value="60">
-                    <input type="number" id="keyPerDay" placeholder="Daily limit" min="1" value="1000">
-                    <input type="number" id="keyPerMonth" placeholder="Monthly limit" min="1" value="30000">
+                <div class="form-group">
+                    <label class="form-label">API Key Name</label>
+                    <input type="text" id="keyName" placeholder="Enter a descriptive name" required>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Description (Optional)</label>
+                    <input type="text" id="keyDesc" placeholder="Brief description of usage">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Rate Limits</label>
+                    <div class="limits-grid">
+                        <input type="number" id="keyPerMinute" placeholder="Per minute" min="1" value="60">
+                        <input type="number" id="keyPerDay" placeholder="Per day" min="1" value="1000">
+                        <input type="number" id="keyPerMonth" placeholder="Per month" min="1" value="30000">
+                    </div>
                 </div>
                 <button type="submit">Create API Key</button>
             </form>
-            <div id="apiKeysList"></div>
+            <div id="apiKeysList" class="items-container"></div>
         </div>
         
         <div class="section">
-            <h3>Authorized Domains</h3>
+            <h3>🌐 Authorized Domains</h3>
             <form onsubmit="addDomain(event)">
-                <input type="text" id="domainName" placeholder="Domain (e.g., example.com)" required>
-                <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin: 8px 0;">
-                    <input type="number" id="domainPerMinute" placeholder="Per minute limit" min="1" value="10">
-                    <input type="number" id="domainPerDay" placeholder="Daily limit" min="1" value="100">
-                    <input type="number" id="domainPerMonth" placeholder="Monthly limit" min="1" value="3000">
+                <div class="form-group">
+                    <label class="form-label">Domain Name</label>
+                    <input type="text" id="domainName" placeholder="e.g., example.com" required>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Rate Limits</label>
+                    <div class="limits-grid">
+                        <input type="number" id="domainPerMinute" placeholder="Per minute" min="1" value="10">
+                        <input type="number" id="domainPerDay" placeholder="Per day" min="1" value="100">
+                        <input type="number" id="domainPerMonth" placeholder="Per month" min="1" value="3000">
+                    </div>
                 </div>
                 <button type="submit">Add Domain</button>
             </form>
-            <div id="domainsList"></div>
+            <div id="domainsList" class="items-container"></div>
         </div>
         
         <div class="section">
-            <h3>Analytics Dashboard</h3>
+            <h3>📊 Analytics Dashboard</h3>
             <p>View comprehensive API usage analytics, KPI metrics, and performance monitoring.</p>
             <a href="/static/analytics.html" style="display: inline-block; background: linear-gradient(135deg, #667eea, #764ba2); color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; transition: transform 0.2s ease;" onmouseover="this.style.transform='translateY(-2px)'" onmouseout="this.style.transform='translateY(0px)'">
                 📊 Open Analytics Dashboard
@@ -145,11 +275,20 @@
         </div>
         
         <div class="section">
-            <h3>Change Password</h3>
+            <h3>🔐 Change Password</h3>
             <form onsubmit="changePassword(event)">
-                <input type="password" id="currentPassword" placeholder="Current Password" required>
-                <input type="password" id="newPassword" placeholder="New Password (min 8 chars, 1 digit, 1 uppercase)" required>
-                <input type="password" id="confirmPassword" placeholder="Confirm New Password" required>
+                <div class="form-group">
+                    <label class="form-label">Current Password</label>
+                    <input type="password" id="currentPassword" placeholder="Enter current password" required>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">New Password</label>
+                    <input type="password" id="newPassword" placeholder="Min 8 chars, 1 digit, 1 uppercase" required>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Confirm New Password</label>
+                    <input type="password" id="confirmPassword" placeholder="Confirm new password" required>
+                </div>
                 <button type="submit">Change Password</button>
             </form>
             <div id="passwordChangeMessage"></div>
@@ -219,43 +358,70 @@
                 const apiKeysList = document.getElementById('apiKeysList');
                 apiKeysList.innerHTML = '';
                 
-                const title = document.createElement('h4');
-                title.textContent = 'Existing API Keys:';
-                apiKeysList.appendChild(title);
-                
-                for (let key in data.api_keys) {
-                    const keyInfo = data.api_keys[key];
-                    const keyDiv = document.createElement('div');
-                    keyDiv.style.border = '1px solid #ddd';
-                    keyDiv.style.padding = '10px';
-                    keyDiv.style.margin = '5px 0';
-                    keyDiv.style.borderRadius = '5px';
-                    keyDiv.style.backgroundColor = '#f9f9f9';
+                if (Object.keys(data.api_keys).length > 0) {
+                    const title = document.createElement('div');
+                    title.className = 'items-title';
+                    title.textContent = 'Active API Keys';
+                    apiKeysList.appendChild(title);
                     
-                    const nameText = document.createElement('div');
-                    nameText.innerHTML = `<strong>${keyInfo.name}</strong> - ${key}`;
-                    keyDiv.appendChild(nameText);
-                    
-                    const limitsText = document.createElement('div');
-                    limitsText.innerHTML = `<small>Limits: ${keyInfo.per_minute_limit}/min, ${keyInfo.per_day_limit}/day, ${keyInfo.per_month_limit}/month</small>`;
-                    limitsText.style.color = '#666';
-                    keyDiv.appendChild(limitsText);
-                    
-                    if (keyInfo.description) {
-                        const descText = document.createElement('div');
-                        descText.innerHTML = `<small><em>${keyInfo.description}</em></small>`;
-                        descText.style.color = '#888';
-                        keyDiv.appendChild(descText);
+                    for (let key in data.api_keys) {
+                        const keyInfo = data.api_keys[key];
+                        const keyCard = document.createElement('div');
+                        keyCard.className = 'item-card';
+                        
+                        const header = document.createElement('div');
+                        header.className = 'item-header';
+                        
+                        const title = document.createElement('h4');
+                        title.className = 'item-title';
+                        title.textContent = keyInfo.name;
+                        header.appendChild(title);
+                        
+                        const subtitle = document.createElement('div');
+                        subtitle.className = 'item-subtitle';
+                        subtitle.textContent = `Key: ${key}`;
+                        
+                        const meta = document.createElement('div');
+                        meta.className = 'item-meta';
+                        meta.innerHTML = `
+                            <span>${keyInfo.per_minute_limit}/min</span>
+                            <span>${keyInfo.per_day_limit}/day</span>
+                            <span>${keyInfo.per_month_limit}/month</span>
+                        `;
+                        
+                        if (keyInfo.description) {
+                            const desc = document.createElement('div');
+                            desc.className = 'item-subtitle';
+                            desc.style.fontStyle = 'italic';
+                            desc.textContent = keyInfo.description;
+                            keyCard.appendChild(header);
+                            keyCard.appendChild(subtitle);
+                            keyCard.appendChild(desc);
+                            keyCard.appendChild(meta);
+                        } else {
+                            keyCard.appendChild(header);
+                            keyCard.appendChild(subtitle);
+                            keyCard.appendChild(meta);
+                        }
+                        
+                        const actions = document.createElement('div');
+                        actions.className = 'item-actions';
+                        const deleteBtn = document.createElement('button');
+                        deleteBtn.textContent = 'Delete';
+                        deleteBtn.className = 'btn-danger';
+                        deleteBtn.onclick = () => deleteApiKey(key);
+                        actions.appendChild(deleteBtn);
+                        keyCard.appendChild(actions);
+                        
+                        apiKeysList.appendChild(keyCard);
                     }
-                    
-                    const deleteBtn = document.createElement('button');
-                    deleteBtn.textContent = 'Delete';
-                    deleteBtn.style.backgroundColor = '#f44336';
-                    deleteBtn.style.marginTop = '5px';
-                    deleteBtn.onclick = () => deleteApiKey(key);
-                    keyDiv.appendChild(deleteBtn);
-                    
-                    apiKeysList.appendChild(keyDiv);
+                } else {
+                    const emptyState = document.createElement('div');
+                    emptyState.style.textAlign = 'center';
+                    emptyState.style.color = '#6c757d';
+                    emptyState.style.padding = '40px 20px';
+                    emptyState.innerHTML = '<p>No API keys created yet.<br>Create your first API key using the form above.</p>';
+                    apiKeysList.appendChild(emptyState);
                 }
             } catch (error) {
                 console.error('Failed to load API keys');
@@ -272,36 +438,54 @@
                 const domainsList = document.getElementById('domainsList');
                 domainsList.innerHTML = '';
                 
-                const title = document.createElement('h4');
-                title.textContent = 'Authorized Domains:';
-                domainsList.appendChild(title);
-                
-                data.domains.forEach(domainObj => {
-                    const domainDiv = document.createElement('div');
-                    domainDiv.style.border = '1px solid #ddd';
-                    domainDiv.style.padding = '10px';
-                    domainDiv.style.margin = '5px 0';
-                    domainDiv.style.borderRadius = '5px';
-                    domainDiv.style.backgroundColor = '#f9f9f9';
+                if (data.domains.length > 0) {
+                    const title = document.createElement('div');
+                    title.className = 'items-title';
+                    title.textContent = 'Authorized Domains';
+                    domainsList.appendChild(title);
                     
-                    const nameText = document.createElement('div');
-                    nameText.innerHTML = `<strong>${domainObj.domain}</strong>`;
-                    domainDiv.appendChild(nameText);
-                    
-                    const limitsText = document.createElement('div');
-                    limitsText.innerHTML = `<small>Limits: ${domainObj.per_minute_limit}/min, ${domainObj.per_day_limit}/day, ${domainObj.per_month_limit}/month</small>`;
-                    limitsText.style.color = '#666';
-                    domainDiv.appendChild(limitsText);
-                    
-                    const deleteBtn = document.createElement('button');
-                    deleteBtn.textContent = 'Delete';
-                    deleteBtn.style.backgroundColor = '#f44336';
-                    deleteBtn.style.marginTop = '5px';
-                    deleteBtn.onclick = () => deleteDomain(domainObj.domain);
-                    domainDiv.appendChild(deleteBtn);
-                    
-                    domainsList.appendChild(domainDiv);
-                });
+                    data.domains.forEach(domainObj => {
+                        const domainCard = document.createElement('div');
+                        domainCard.className = 'item-card';
+                        
+                        const header = document.createElement('div');
+                        header.className = 'item-header';
+                        
+                        const title = document.createElement('h4');
+                        title.className = 'item-title';
+                        title.textContent = domainObj.domain;
+                        header.appendChild(title);
+                        
+                        const meta = document.createElement('div');
+                        meta.className = 'item-meta';
+                        meta.innerHTML = `
+                            <span>${domainObj.per_minute_limit}/min</span>
+                            <span>${domainObj.per_day_limit}/day</span>
+                            <span>${domainObj.per_month_limit}/month</span>
+                        `;
+                        
+                        const actions = document.createElement('div');
+                        actions.className = 'item-actions';
+                        const deleteBtn = document.createElement('button');
+                        deleteBtn.textContent = 'Delete';
+                        deleteBtn.className = 'btn-danger';
+                        deleteBtn.onclick = () => deleteDomain(domainObj.domain);
+                        actions.appendChild(deleteBtn);
+                        
+                        domainCard.appendChild(header);
+                        domainCard.appendChild(meta);
+                        domainCard.appendChild(actions);
+                        
+                        domainsList.appendChild(domainCard);
+                    });
+                } else {
+                    const emptyState = document.createElement('div');
+                    emptyState.style.textAlign = 'center';
+                    emptyState.style.color = '#6c757d';
+                    emptyState.style.padding = '40px 20px';
+                    emptyState.innerHTML = '<p>No domains authorized yet.<br>Add your first domain using the form above.</p>';
+                    domainsList.appendChild(emptyState);
+                }
             } catch (error) {
                 console.error('Failed to load domains');
             }
