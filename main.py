@@ -1774,6 +1774,19 @@ async def admin_page():
             <script>
                 let sessionToken = localStorage.getItem('adminToken');
                 
+                function handleSessionExpiry() {
+                    // Clear expired token and show login form
+                    localStorage.removeItem('adminToken');
+                    sessionToken = null;
+                    showLoginForm();
+                    alert('Your session has expired. Please login again.');
+                }
+                
+                function showLoginForm() {
+                    document.getElementById('loginForm').style.display = 'block';
+                    document.getElementById('adminPanel').style.display = 'none';
+                }
+                
                 if (sessionToken) {
                     showAdminPanel();
                 }
@@ -1816,6 +1829,12 @@ async def admin_page():
                         const response = await fetch('/admin/api-keys', {
                             headers: { 'Authorization': 'Bearer ' + sessionToken }
                         });
+                        
+                        if (response.status === 401 || response.status === 403) {
+                            handleSessionExpiry();
+                            return;
+                        }
+                        
                         const data = await response.json();
                         
                         let html = '<h4>Existing API Keys:</h4>';
@@ -1833,6 +1852,12 @@ async def admin_page():
                         const response = await fetch('/admin/domains', {
                             headers: { 'Authorization': 'Bearer ' + sessionToken }
                         });
+                        
+                        if (response.status === 401 || response.status === 403) {
+                            handleSessionExpiry();
+                            return;
+                        }
+                        
                         const data = await response.json();
                         
                         let html = '<h4>Authorized Domains:</h4>';
@@ -1860,6 +1885,11 @@ async def admin_page():
                             body: JSON.stringify({ name, description })
                         });
                         
+                        if (response.status === 401 || response.status === 403) {
+                            handleSessionExpiry();
+                            return;
+                        }
+                        
                         if (response.ok) {
                             document.getElementById('keyName').value = '';
                             document.getElementById('keyDesc').value = '';
@@ -1884,6 +1914,11 @@ async def admin_page():
                             body: JSON.stringify({ domain })
                         });
                         
+                        if (response.status === 401 || response.status === 403) {
+                            handleSessionExpiry();
+                            return;
+                        }
+                        
                         if (response.ok) {
                             document.getElementById('domainName').value = '';
                             loadDomains();
@@ -1896,10 +1931,16 @@ async def admin_page():
                 async function deleteApiKey(key) {
                     if (confirm('Delete this API key?')) {
                         try {
-                            await fetch('/admin/api-keys/' + key, {
+                            const response = await fetch('/admin/api-keys/' + key, {
                                 method: 'DELETE',
                                 headers: { 'Authorization': 'Bearer ' + sessionToken }
                             });
+                            
+                            if (response.status === 401 || response.status === 403) {
+                                handleSessionExpiry();
+                                return;
+                            }
+                            
                             loadApiKeys();
                         } catch (error) {
                             console.error('Failed to delete API key');
@@ -1910,10 +1951,16 @@ async def admin_page():
                 async function deleteDomain(domain) {
                     if (confirm('Remove this domain?')) {
                         try {
-                            await fetch('/admin/domains/' + domain, {
+                            const response = await fetch('/admin/domains/' + domain, {
                                 method: 'DELETE',
                                 headers: { 'Authorization': 'Bearer ' + sessionToken }
                             });
+                            
+                            if (response.status === 401 || response.status === 403) {
+                                handleSessionExpiry();
+                                return;
+                            }
+                            
                             loadDomains();
                         } catch (error) {
                             console.error('Failed to delete domain');
@@ -1945,6 +1992,11 @@ async def admin_page():
                                 new_password: newPassword 
                             })
                         });
+                        
+                        if (response.status === 401 || response.status === 403) {
+                            handleSessionExpiry();
+                            return;
+                        }
                         
                         const data = await response.json();
                         
