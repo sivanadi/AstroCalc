@@ -40,12 +40,25 @@
             flex-wrap: wrap;
         }
         
-        .date-selector select {
+        .date-selector select, .filter-selector select {
             padding: 8px 12px;
             border: 2px solid #ddd;
             border-radius: 8px;
             font-size: 14px;
             background: white;
+            min-width: 120px;
+        }
+        
+        .filter-selector {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .filter-selector label {
+            font-weight: 600;
+            color: #333;
+            white-space: nowrap;
         }
         
         .refresh-btn, .back-btn {
@@ -203,23 +216,131 @@
         .metric-up { color: #28a745; }
         .metric-down { color: #dc3545; }
         
-        @media (max-width: 768px) {
-            .header {
-                flex-direction: column;
-                gap: 15px;
-            }
-            
-            .header-controls {
-                width: 100%;
-                justify-content: center;
+        /* Enhanced Responsive Design */
+        @media (max-width: 1200px) {
+            .dashboard {
+                grid-template-columns: 1fr;
             }
             
             .chart-container {
                 grid-column: span 1;
             }
+        }
+        
+        @media (max-width: 768px) {
+            body {
+                padding: 10px;
+            }
+            
+            .header {
+                flex-direction: column;
+                gap: 15px;
+                padding: 15px;
+            }
+            
+            .header h1 {
+                font-size: 24px;
+                text-align: center;
+            }
+            
+            .header-controls {
+                width: 100%;
+                justify-content: center;
+                flex-wrap: wrap;
+                gap: 10px;
+            }
+            
+            .date-selector, .filter-selector {
+                flex: 1;
+                min-width: 120px;
+            }
+            
+            .refresh-btn, .back-btn {
+                padding: 8px 16px;
+                font-size: 14px;
+            }
             
             .kpi-grid {
-                grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+                grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+                gap: 10px;
+            }
+            
+            .kpi-card {
+                padding: 15px;
+            }
+            
+            .kpi-value {
+                font-size: 24px;
+            }
+            
+            .chart-container, .data-table, .violations-section {
+                padding: 15px;
+                margin-bottom: 15px;
+            }
+            
+            .chart-title, .table-title, .violations-title {
+                font-size: 16px;
+            }
+            
+            .table th, .table td {
+                padding: 8px;
+                font-size: 14px;
+            }
+        }
+        
+        @media (max-width: 480px) {
+            body {
+                padding: 5px;
+            }
+            
+            .header {
+                padding: 10px;
+            }
+            
+            .header h1 {
+                font-size: 20px;
+            }
+            
+            .header-controls {
+                flex-direction: column;
+                align-items: stretch;
+            }
+            
+            .date-selector, .filter-selector {
+                width: 100%;
+            }
+            
+            .date-selector select, .filter-selector select {
+                width: 100%;
+            }
+            
+            .kpi-grid {
+                grid-template-columns: 1fr 1fr;
+                gap: 8px;
+            }
+            
+            .kpi-card {
+                padding: 10px;
+            }
+            
+            .kpi-value {
+                font-size: 20px;
+            }
+            
+            .kpi-label {
+                font-size: 11px;
+            }
+            
+            .chart-container, .data-table {
+                padding: 10px;
+            }
+            
+            .table {
+                font-size: 12px;
+            }
+            
+            .table th, .table td {
+                padding: 6px 4px;
             }
         }
         
@@ -263,6 +384,14 @@
                     <option value="30" selected>Last 30 Days</option>
                     <option value="60">Last 60 Days</option>
                     <option value="90">Last 90 Days</option>
+                </select>
+            </div>
+            <div class="filter-selector">
+                <label for="viewType">View By:</label>
+                <select id="viewType" onchange="loadAnalytics()">
+                    <option value="all" selected>All Usage</option>
+                    <option value="api_key">API Keys Only</option>
+                    <option value="domain">Domains Only</option>
                 </select>
             </div>
             <button class="refresh-btn" onclick="refreshData()">
@@ -389,17 +518,18 @@
 
         async function loadAnalytics() {
             const days = document.getElementById('days').value;
+            const viewType = document.getElementById('viewType').value;
             
             try {
                 showLoading(true);
                 hideError();
 
-                const data = await makeAuthRequest(`/admin/analytics/dashboard?days=${days}`);
+                const data = await makeAuthRequest(`/admin/analytics/dashboard?days=${days}&view_type=${viewType}`);
                 if (!data) return;
 
                 updateKPIs(data.summary);
-                updateCharts(data.analytics);
-                updateTables(data.analytics);
+                updateCharts(data.analytics, viewType);
+                updateTables(data.analytics, viewType);
                 updateViolations(data.violations);
 
                 showDashboard(true);
@@ -419,19 +549,75 @@
             document.getElementById('kpi-avg-daily').textContent = summary.avg_daily_requests.toFixed(1);
         }
 
-        function updateCharts(analytics) {
-            updateUsageChart(analytics);
-            updateHourlyChart(analytics);
+        function updateCharts(analytics, viewType) {
+            updateUsageChart(analytics, viewType);
+            updateHourlyChart(analytics, viewType);
         }
 
-        function updateUsageChart(analytics) {
+        function updateUsageChart(analytics, viewType) {
             const ctx = document.getElementById('usageChart').getContext('2d');
             
             // Prepare data
             const dates = Object.keys(analytics.daily_usage).sort();
-            const apiKeyData = dates.map(date => analytics.daily_usage[date].api_key || 0);
-            const domainData = dates.map(date => analytics.daily_usage[date].domain || 0);
-            const totalData = dates.map(date => analytics.daily_usage[date].total || 0);
+            const datasets = [];
+
+            if (viewType === 'all') {
+                const apiKeyData = dates.map(date => analytics.daily_usage[date].api_key || 0);
+                const domainData = dates.map(date => analytics.daily_usage[date].domain || 0);
+                const totalData = dates.map(date => analytics.daily_usage[date].total || 0);
+
+                datasets.push(
+                    {
+                        label: 'Total Requests',
+                        data: totalData,
+                        borderColor: '#667eea',
+                        backgroundColor: 'rgba(102, 126, 234, 0.1)',
+                        borderWidth: 3,
+                        fill: true,
+                        tension: 0.4
+                    },
+                    {
+                        label: 'API Key Requests',
+                        data: apiKeyData,
+                        borderColor: '#28a745',
+                        backgroundColor: 'rgba(40, 167, 69, 0.1)',
+                        borderWidth: 2,
+                        fill: false,
+                        tension: 0.4
+                    },
+                    {
+                        label: 'Domain Requests',
+                        data: domainData,
+                        borderColor: '#ffc107',
+                        backgroundColor: 'rgba(255, 193, 7, 0.1)',
+                        borderWidth: 2,
+                        fill: false,
+                        tension: 0.4
+                    }
+                );
+            } else if (viewType === 'api_key') {
+                const apiKeyData = dates.map(date => analytics.daily_usage[date].api_key || 0);
+                datasets.push({
+                    label: 'API Key Requests',
+                    data: apiKeyData,
+                    borderColor: '#28a745',
+                    backgroundColor: 'rgba(40, 167, 69, 0.2)',
+                    borderWidth: 3,
+                    fill: true,
+                    tension: 0.4
+                });
+            } else if (viewType === 'domain') {
+                const domainData = dates.map(date => analytics.daily_usage[date].domain || 0);
+                datasets.push({
+                    label: 'Domain Requests',
+                    data: domainData,
+                    borderColor: '#ffc107',
+                    backgroundColor: 'rgba(255, 193, 7, 0.2)',
+                    borderWidth: 3,
+                    fill: true,
+                    tension: 0.4
+                });
+            }
 
             // Destroy existing chart
             if (usageChart) {
@@ -442,35 +628,7 @@
                 type: 'line',
                 data: {
                     labels: dates.map(date => new Date(date).toLocaleDateString()),
-                    datasets: [
-                        {
-                            label: 'Total Requests',
-                            data: totalData,
-                            borderColor: '#667eea',
-                            backgroundColor: 'rgba(102, 126, 234, 0.1)',
-                            borderWidth: 3,
-                            fill: true,
-                            tension: 0.4
-                        },
-                        {
-                            label: 'API Key Requests',
-                            data: apiKeyData,
-                            borderColor: '#28a745',
-                            backgroundColor: 'rgba(40, 167, 69, 0.1)',
-                            borderWidth: 2,
-                            fill: false,
-                            tension: 0.4
-                        },
-                        {
-                            label: 'Domain Requests',
-                            data: domainData,
-                            borderColor: '#ffc107',
-                            backgroundColor: 'rgba(255, 193, 7, 0.1)',
-                            borderWidth: 2,
-                            fill: false,
-                            tension: 0.4
-                        }
-                    ]
+                    datasets: datasets
                 },
                 options: {
                     responsive: true,
@@ -497,12 +655,25 @@
             });
         }
 
-        function updateHourlyChart(analytics) {
+        function updateHourlyChart(analytics, viewType) {
             const ctx = document.getElementById('hourlyChart').getContext('2d');
             
             // Prepare hourly data (0-23 hours)
             const hours = Array.from({length: 24}, (_, i) => i);
             const hourlyData = hours.map(hour => analytics.hourly_distribution[hour] || 0);
+
+            // Change color based on view type
+            let backgroundColor, borderColor;
+            if (viewType === 'api_key') {
+                backgroundColor = 'rgba(40, 167, 69, 0.8)';
+                borderColor = '#28a745';
+            } else if (viewType === 'domain') {
+                backgroundColor = 'rgba(255, 193, 7, 0.8)';
+                borderColor = '#ffc107';
+            } else {
+                backgroundColor = 'rgba(102, 126, 234, 0.8)';
+                borderColor = '#667eea';
+            }
 
             // Destroy existing chart
             if (hourlyChart) {
@@ -516,8 +687,8 @@
                     datasets: [{
                         label: 'Requests',
                         data: hourlyData,
-                        backgroundColor: 'rgba(102, 126, 234, 0.8)',
-                        borderColor: '#667eea',
+                        backgroundColor: backgroundColor,
+                        borderColor: borderColor,
                         borderWidth: 1
                     }]
                 },
@@ -546,43 +717,59 @@
             });
         }
 
-        function updateTables(analytics) {
-            // Update API Keys table
+        function updateTables(analytics, viewType) {
+            // Update API Keys table (show only if viewing all or API keys)
             const apiKeysTable = document.getElementById('api-keys-table');
-            apiKeysTable.innerHTML = '';
+            const apiKeysContainer = apiKeysTable.closest('.data-table');
             
-            if (analytics.top_api_keys.length === 0) {
-                apiKeysTable.innerHTML = '<tr><td colspan="4">No API key usage data available</td></tr>';
+            if (viewType === 'domain') {
+                // Hide API keys table when viewing domains only
+                apiKeysContainer.style.display = 'none';
             } else {
-                analytics.top_api_keys.forEach(key => {
-                    const row = document.createElement('tr');
-                    row.innerHTML = `
-                        <td><strong>${key.name}</strong></td>
-                        <td>${key.description}</td>
-                        <td><strong>${key.requests.toLocaleString()}</strong></td>
-                        <td><span class="status-indicator status-healthy"></span>Active</td>
-                    `;
-                    apiKeysTable.appendChild(row);
-                });
+                apiKeysContainer.style.display = 'block';
+                apiKeysTable.innerHTML = '';
+                
+                if (analytics.top_api_keys.length === 0) {
+                    apiKeysTable.innerHTML = '<tr><td colspan="4">No API key usage data available</td></tr>';
+                } else {
+                    analytics.top_api_keys.forEach(key => {
+                        const row = document.createElement('tr');
+                        row.innerHTML = `
+                            <td><strong>${key.name}</strong></td>
+                            <td>${key.description}</td>
+                            <td><strong>${key.requests.toLocaleString()}</strong></td>
+                            <td><span class="status-indicator status-healthy"></span>Active</td>
+                        `;
+                        apiKeysTable.appendChild(row);
+                    });
+                }
             }
 
-            // Update Domains table
+            // Update Domains table (show only if viewing all or domains)
             const domainsTable = document.getElementById('domains-table');
-            domainsTable.innerHTML = '';
+            const domainsContainer = domainsTable.closest('.data-table');
             
-            if (analytics.top_domains.length === 0) {
-                domainsTable.innerHTML = '<tr><td colspan="4">No domain usage data available</td></tr>';
+            if (viewType === 'api_key') {
+                // Hide domains table when viewing API keys only
+                domainsContainer.style.display = 'none';
             } else {
-                analytics.top_domains.forEach(domain => {
-                    const row = document.createElement('tr');
-                    row.innerHTML = `
-                        <td><strong>${domain.domain}</strong></td>
-                        <td>${domain.description}</td>
-                        <td><strong>${domain.requests.toLocaleString()}</strong></td>
-                        <td><span class="status-indicator status-healthy"></span>Active</td>
-                    `;
-                    domainsTable.appendChild(row);
-                });
+                domainsContainer.style.display = 'block';
+                domainsTable.innerHTML = '';
+                
+                if (analytics.top_domains.length === 0) {
+                    domainsTable.innerHTML = '<tr><td colspan="4">No domain usage data available</td></tr>';
+                } else {
+                    analytics.top_domains.forEach(domain => {
+                        const row = document.createElement('tr');
+                        row.innerHTML = `
+                            <td><strong>${domain.domain}</strong></td>
+                            <td>${domain.description}</td>
+                            <td><strong>${domain.requests.toLocaleString()}</strong></td>
+                            <td><span class="status-indicator status-healthy"></span>Active</td>
+                        `;
+                        domainsTable.appendChild(row);
+                    });
+                }
             }
         }
 

@@ -892,8 +892,13 @@ def get_domain_limits(domain: str):
     return None
 
 # Analytics functions
-def get_usage_analytics(days: int = 30):
-    """Get comprehensive usage analytics for the last N days"""
+def get_usage_analytics(days: int = 30, view_type: str = "all"):
+    """Get comprehensive usage analytics for the last N days
+    
+    Args:
+        days: Number of days to analyze
+        view_type: Filter by 'all', 'api_key', or 'domain'
+    """
     conn = sqlite3.connect('astrology_db.sqlite3')
     cursor = conn.cursor()
     
@@ -903,15 +908,26 @@ def get_usage_analytics(days: int = 30):
     
     try:
         # Get daily usage for line chart
-        cursor.execute('''
-            SELECT day_key, 
-                   identifier_type,
-                   SUM(count) as total_requests
-            FROM usage_day 
-            WHERE day_key >= ? AND day_key <= ?
-            GROUP BY day_key, identifier_type
-            ORDER BY day_key
-        ''', (start_date.strftime('%Y-%m-%d'), end_date.strftime('%Y-%m-%d')))
+        if view_type == "all":
+            cursor.execute('''
+                SELECT day_key, 
+                       identifier_type,
+                       SUM(count) as total_requests
+                FROM usage_day 
+                WHERE day_key >= ? AND day_key <= ?
+                GROUP BY day_key, identifier_type
+                ORDER BY day_key
+            ''', (start_date.strftime('%Y-%m-%d'), end_date.strftime('%Y-%m-%d')))
+        else:
+            cursor.execute('''
+                SELECT day_key, 
+                       identifier_type,
+                       SUM(count) as total_requests
+                FROM usage_day 
+                WHERE day_key >= ? AND day_key <= ? AND identifier_type = ?
+                GROUP BY day_key, identifier_type
+                ORDER BY day_key
+            ''', (start_date.strftime('%Y-%m-%d'), end_date.strftime('%Y-%m-%d'), view_type))
         
         daily_usage_raw = cursor.fetchall()
         
@@ -933,14 +949,24 @@ def get_usage_analytics(days: int = 30):
             current_date += timedelta(days=1)
         
         # Get total statistics
-        cursor.execute('''
-            SELECT identifier_type, 
-                   SUM(count) as total_requests,
-                   COUNT(DISTINCT identifier) as unique_identifiers
-            FROM usage_day 
-            WHERE day_key >= ? AND day_key <= ?
-            GROUP BY identifier_type
-        ''', (start_date.strftime('%Y-%m-%d'), end_date.strftime('%Y-%m-%d')))
+        if view_type == "all":
+            cursor.execute('''
+                SELECT identifier_type, 
+                       SUM(count) as total_requests,
+                       COUNT(DISTINCT identifier) as unique_identifiers
+                FROM usage_day 
+                WHERE day_key >= ? AND day_key <= ?
+                GROUP BY identifier_type
+            ''', (start_date.strftime('%Y-%m-%d'), end_date.strftime('%Y-%m-%d')))
+        else:
+            cursor.execute('''
+                SELECT identifier_type, 
+                       SUM(count) as total_requests,
+                       COUNT(DISTINCT identifier) as unique_identifiers
+                FROM usage_day 
+                WHERE day_key >= ? AND day_key <= ? AND identifier_type = ?
+                GROUP BY identifier_type
+            ''', (start_date.strftime('%Y-%m-%d'), end_date.strftime('%Y-%m-%d'), view_type))
         
         totals_raw = cursor.fetchall()
         totals = {'api_key': {'requests': 0, 'unique': 0}, 'domain': {'requests': 0, 'unique': 0}}
@@ -949,55 +975,67 @@ def get_usage_analytics(days: int = 30):
             identifier_type, total_requests, unique_identifiers = row
             totals[identifier_type] = {'requests': total_requests, 'unique': unique_identifiers}
         
-        # Get top API keys by usage
-        cursor.execute('''
-            SELECT ak.name, ak.description, SUM(ud.count) as total_requests
-            FROM usage_day ud
-            JOIN api_keys ak ON ud.identifier = ak.key_hash
-            WHERE ud.day_key >= ? AND ud.day_key <= ? AND ud.identifier_type = 'api_key'
-            GROUP BY ud.identifier, ak.name, ak.description
-            ORDER BY total_requests DESC
-            LIMIT 10
-        ''', (start_date.strftime('%Y-%m-%d'), end_date.strftime('%Y-%m-%d')))
-        
+        # Get top API keys by usage (only if view_type allows)
         top_api_keys = []
-        for row in cursor.fetchall():
-            name, description, requests = row
-            top_api_keys.append({
-                'name': name,
-                'description': description or 'No description',
-                'requests': requests
-            })
+        if view_type in ["all", "api_key"]:
+            cursor.execute('''
+                SELECT ak.name, ak.description, SUM(ud.count) as total_requests
+                FROM usage_day ud
+                JOIN api_keys ak ON ud.identifier = ak.key_hash
+                WHERE ud.day_key >= ? AND ud.day_key <= ? AND ud.identifier_type = 'api_key'
+                GROUP BY ud.identifier, ak.name, ak.description
+                ORDER BY total_requests DESC
+                LIMIT 10
+            ''', (start_date.strftime('%Y-%m-%d'), end_date.strftime('%Y-%m-%d')))
+            
+            for row in cursor.fetchall():
+                name, description, requests = row
+                top_api_keys.append({
+                    'name': name,
+                    'description': description or 'No description',
+                    'requests': requests
+                })
         
-        # Get top domains by usage
-        cursor.execute('''
-            SELECT ad.domain, ad.description, SUM(ud.count) as total_requests
-            FROM usage_day ud
-            JOIN authorized_domains ad ON ud.identifier = ad.domain
-            WHERE ud.day_key >= ? AND ud.day_key <= ? AND ud.identifier_type = 'domain'
-            GROUP BY ud.identifier, ad.domain, ad.description
-            ORDER BY total_requests DESC
-            LIMIT 10
-        ''', (start_date.strftime('%Y-%m-%d'), end_date.strftime('%Y-%m-%d')))
-        
+        # Get top domains by usage (only if view_type allows)
         top_domains = []
-        for row in cursor.fetchall():
-            domain, description, requests = row
-            top_domains.append({
-                'domain': domain,
-                'description': description or 'No description',
-                'requests': requests
-            })
+        if view_type in ["all", "domain"]:
+            cursor.execute('''
+                SELECT ad.domain, ad.description, SUM(ud.count) as total_requests
+                FROM usage_day ud
+                JOIN authorized_domains ad ON ud.identifier = ad.domain
+                WHERE ud.day_key >= ? AND ud.day_key <= ? AND ud.identifier_type = 'domain'
+                GROUP BY ud.identifier, ad.domain, ad.description
+                ORDER BY total_requests DESC
+                LIMIT 10
+            ''', (start_date.strftime('%Y-%m-%d'), end_date.strftime('%Y-%m-%d')))
+            
+            for row in cursor.fetchall():
+                domain, description, requests = row
+                top_domains.append({
+                    'domain': domain,
+                    'description': description or 'No description',
+                    'requests': requests
+                })
         
         # Get hourly distribution (for current day)
         today = datetime.now().strftime('%Y-%m-%d')
-        cursor.execute('''
-            SELECT SUBSTR(minute_key, 12, 2) as hour, SUM(count) as requests
-            FROM usage_minute
-            WHERE minute_key LIKE ? || '%'
-            GROUP BY hour
-            ORDER BY hour
-        ''', (today,))
+        if view_type == "all":
+            cursor.execute('''
+                SELECT SUBSTR(minute_key, 12, 2) as hour, SUM(count) as requests
+                FROM usage_minute
+                WHERE minute_key LIKE ? || '%'
+                GROUP BY hour
+                ORDER BY hour
+            ''', (today,))
+        else:
+            # For filtered views, get hourly data only for the selected type
+            cursor.execute('''
+                SELECT SUBSTR(minute_key, 12, 2) as hour, SUM(count) as requests
+                FROM usage_minute
+                WHERE minute_key LIKE ? || '%' AND identifier_type = ?
+                GROUP BY hour
+                ORDER BY hour
+            ''', (today, view_type))
         
         hourly_distribution = {}
         for row in cursor.fetchall():
@@ -1021,7 +1059,8 @@ def get_usage_analytics(days: int = 30):
                 'start': start_date.strftime('%Y-%m-%d'),
                 'end': end_date.strftime('%Y-%m-%d'),
                 'days': days
-            }
+            },
+            'view_type': view_type
         }
         
     except Exception as e:
@@ -2422,11 +2461,23 @@ async def delete_domain(request: Request, domain: str, admin_user: str = Depends
 @app.get("/admin/analytics/dashboard")
 async def get_analytics_dashboard(
     days: int = 30,
+    view_type: str = "all",
     admin_user: str = Depends(verify_admin_session)
 ):
-    """Get comprehensive analytics data for admin dashboard"""
+    """Get comprehensive analytics data for admin dashboard
+    
+    Args:
+        days: Number of days to analyze (1-365)
+        view_type: Filter by 'all', 'api_key', or 'domain'
+    """
+    if days < 1 or days > 365:
+        raise HTTPException(status_code=400, detail="Days must be between 1 and 365")
+    
+    if view_type not in ["all", "api_key", "domain"]:
+        raise HTTPException(status_code=400, detail="view_type must be 'all', 'api_key', or 'domain'")
+    
     try:
-        analytics = get_usage_analytics(days)
+        analytics = get_usage_analytics(days, view_type)
         summary = get_usage_summary()
         violations = get_rate_limit_violations()
         
@@ -2434,6 +2485,7 @@ async def get_analytics_dashboard(
             "analytics": analytics,
             "summary": summary,
             "violations": violations,
+            "view_type": view_type,
             "generated_at": datetime.now().isoformat()
         }
     except Exception as e:
