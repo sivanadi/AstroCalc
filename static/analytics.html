@@ -388,10 +388,16 @@
             </div>
             <div class="filter-selector">
                 <label for="viewType">View By:</label>
-                <select id="viewType" onchange="loadAnalytics()">
+                <select id="viewType" onchange="onViewTypeChange()">
                     <option value="all" selected>All Usage</option>
                     <option value="api_key">API Keys Only</option>
                     <option value="domain">Domains Only</option>
+                </select>
+            </div>
+            <div class="filter-selector" id="secondaryFilter" style="display: none;">
+                <label for="identifier">Select:</label>
+                <select id="identifier" onchange="loadAnalytics()">
+                    <option value="">All</option>
                 </select>
             </div>
             <button class="refresh-btn" onclick="refreshData()">
@@ -519,17 +525,23 @@
         async function loadAnalytics() {
             const days = document.getElementById('days').value;
             const viewType = document.getElementById('viewType').value;
+            const identifier = document.getElementById('identifier').value;
             
             try {
                 showLoading(true);
                 hideError();
 
-                const data = await makeAuthRequest(`/admin/analytics/dashboard?days=${days}&view_type=${viewType}`);
+                let url = `/admin/analytics/dashboard?days=${days}&view_type=${viewType}`;
+                if (identifier) {
+                    url += `&identifier=${encodeURIComponent(identifier)}`;
+                }
+
+                const data = await makeAuthRequest(url);
                 if (!data) return;
 
                 updateKPIs(data.summary);
-                updateCharts(data.analytics, viewType);
-                updateTables(data.analytics, viewType);
+                updateCharts(data.analytics, viewType, identifier);
+                updateTables(data.analytics, viewType, identifier);
                 updateViolations(data.violations);
 
                 showDashboard(true);
@@ -541,6 +553,50 @@
             }
         }
 
+        async function onViewTypeChange() {
+            const viewType = document.getElementById('viewType').value;
+            const secondaryFilter = document.getElementById('secondaryFilter');
+            const identifierSelect = document.getElementById('identifier');
+            
+            // Clear previous options
+            identifierSelect.innerHTML = '<option value="">All</option>';
+            
+            if (viewType === 'all') {
+                secondaryFilter.style.display = 'none';
+            } else {
+                secondaryFilter.style.display = 'flex';
+                
+                try {
+                    if (viewType === 'api_key') {
+                        const data = await makeAuthRequest('/admin/analytics/api-keys');
+                        if (data && data.api_keys) {
+                            data.api_keys.forEach(apiKey => {
+                                const option = document.createElement('option');
+                                option.value = apiKey.key_hash;
+                                option.textContent = `${apiKey.name} (${apiKey.description})`;
+                                identifierSelect.appendChild(option);
+                            });
+                        }
+                    } else if (viewType === 'domain') {
+                        const data = await makeAuthRequest('/admin/analytics/domains');
+                        if (data && data.domains) {
+                            data.domains.forEach(domain => {
+                                const option = document.createElement('option');
+                                option.value = domain.domain;
+                                option.textContent = `${domain.domain} (${domain.description})`;
+                                identifierSelect.appendChild(option);
+                            });
+                        }
+                    }
+                } catch (error) {
+                    console.error('Failed to load dropdown options:', error);
+                }
+            }
+            
+            // Load analytics with new view type
+            loadAnalytics();
+        }
+
         function updateKPIs(summary) {
             document.getElementById('kpi-today').textContent = summary.today_requests.toLocaleString();
             document.getElementById('kpi-month').textContent = summary.month_requests.toLocaleString();
@@ -549,12 +605,12 @@
             document.getElementById('kpi-avg-daily').textContent = summary.avg_daily_requests.toFixed(1);
         }
 
-        function updateCharts(analytics, viewType) {
-            updateUsageChart(analytics, viewType);
-            updateHourlyChart(analytics, viewType);
+        function updateCharts(analytics, viewType, identifier) {
+            updateUsageChart(analytics, viewType, identifier);
+            updateHourlyChart(analytics, viewType, identifier);
         }
 
-        function updateUsageChart(analytics, viewType) {
+        function updateUsageChart(analytics, viewType, identifier) {
             const ctx = document.getElementById('usageChart').getContext('2d');
             
             // Prepare data
@@ -655,7 +711,7 @@
             });
         }
 
-        function updateHourlyChart(analytics, viewType) {
+        function updateHourlyChart(analytics, viewType, identifier) {
             const ctx = document.getElementById('hourlyChart').getContext('2d');
             
             // Prepare hourly data (0-23 hours)
@@ -717,7 +773,7 @@
             });
         }
 
-        function updateTables(analytics, viewType) {
+        function updateTables(analytics, viewType, identifier) {
             // Update API Keys table (show only if viewing all or API keys)
             const apiKeysTable = document.getElementById('api-keys-table');
             const apiKeysContainer = apiKeysTable.closest('.data-table');

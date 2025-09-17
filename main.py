@@ -892,12 +892,13 @@ def get_domain_limits(domain: str):
     return None
 
 # Analytics functions
-def get_usage_analytics(days: int = 30, view_type: str = "all"):
+def get_usage_analytics(days: int = 30, view_type: str = "all", identifier: Optional[str] = None):
     """Get comprehensive usage analytics for the last N days
     
     Args:
         days: Number of days to analyze
         view_type: Filter by 'all', 'api_key', or 'domain'
+        identifier: Optional specific API key hash or domain to filter by
     """
     conn = sqlite3.connect('astrology_db.sqlite3')
     cursor = conn.cursor()
@@ -908,7 +909,18 @@ def get_usage_analytics(days: int = 30, view_type: str = "all"):
     
     try:
         # Get daily usage for line chart
-        if view_type == "all":
+        if identifier:
+            # Filter by specific identifier
+            cursor.execute('''
+                SELECT day_key, 
+                       identifier_type,
+                       SUM(count) as total_requests
+                FROM usage_day 
+                WHERE day_key >= ? AND day_key <= ? AND identifier = ?
+                GROUP BY day_key, identifier_type
+                ORDER BY day_key
+            ''', (start_date.strftime('%Y-%m-%d'), end_date.strftime('%Y-%m-%d'), identifier))
+        elif view_type == "all":
             cursor.execute('''
                 SELECT day_key, 
                        identifier_type,
@@ -949,7 +961,17 @@ def get_usage_analytics(days: int = 30, view_type: str = "all"):
             current_date += timedelta(days=1)
         
         # Get total statistics
-        if view_type == "all":
+        if identifier:
+            # For specific identifier, get stats for that identifier only
+            cursor.execute('''
+                SELECT identifier_type, 
+                       SUM(count) as total_requests,
+                       COUNT(DISTINCT identifier) as unique_identifiers
+                FROM usage_day 
+                WHERE day_key >= ? AND day_key <= ? AND identifier = ?
+                GROUP BY identifier_type
+            ''', (start_date.strftime('%Y-%m-%d'), end_date.strftime('%Y-%m-%d'), identifier))
+        elif view_type == "all":
             cursor.execute('''
                 SELECT identifier_type, 
                        SUM(count) as total_requests,
@@ -977,7 +999,17 @@ def get_usage_analytics(days: int = 30, view_type: str = "all"):
         
         # Get top API keys by usage (only if view_type allows)
         top_api_keys = []
-        if view_type in ["all", "api_key"]:
+        if identifier and view_type == "api_key":
+            # For specific API key, show just that key
+            cursor.execute('''
+                SELECT ak.name, ak.description, SUM(ud.count) as total_requests
+                FROM usage_day ud
+                JOIN api_keys ak ON ud.identifier = ak.key_hash
+                WHERE ud.day_key >= ? AND ud.day_key <= ? AND ud.identifier = ? AND ud.identifier_type = 'api_key'
+                GROUP BY ud.identifier, ak.name, ak.description
+                ORDER BY total_requests DESC
+            ''', (start_date.strftime('%Y-%m-%d'), end_date.strftime('%Y-%m-%d'), identifier))
+        elif not identifier and view_type in ["all", "api_key"]:
             cursor.execute('''
                 SELECT ak.name, ak.description, SUM(ud.count) as total_requests
                 FROM usage_day ud
@@ -998,7 +1030,17 @@ def get_usage_analytics(days: int = 30, view_type: str = "all"):
         
         # Get top domains by usage (only if view_type allows)
         top_domains = []
-        if view_type in ["all", "domain"]:
+        if identifier and view_type == "domain":
+            # For specific domain, show just that domain
+            cursor.execute('''
+                SELECT ad.domain, ad.description, SUM(ud.count) as total_requests
+                FROM usage_day ud
+                JOIN authorized_domains ad ON ud.identifier = ad.domain
+                WHERE ud.day_key >= ? AND ud.day_key <= ? AND ud.identifier = ? AND ud.identifier_type = 'domain'
+                GROUP BY ud.identifier, ad.domain, ad.description
+                ORDER BY total_requests DESC
+            ''', (start_date.strftime('%Y-%m-%d'), end_date.strftime('%Y-%m-%d'), identifier))
+        elif not identifier and view_type in ["all", "domain"]:
             cursor.execute('''
                 SELECT ad.domain, ad.description, SUM(ud.count) as total_requests
                 FROM usage_day ud
@@ -1019,7 +1061,16 @@ def get_usage_analytics(days: int = 30, view_type: str = "all"):
         
         # Get hourly distribution (for current day)
         today = datetime.now().strftime('%Y-%m-%d')
-        if view_type == "all":
+        if identifier:
+            # For specific identifier, get hourly data for that identifier
+            cursor.execute('''
+                SELECT SUBSTR(minute_key, 12, 2) as hour, SUM(count) as requests
+                FROM usage_minute
+                WHERE minute_key LIKE ? || '%' AND identifier = ?
+                GROUP BY hour
+                ORDER BY hour
+            ''', (today, identifier))
+        elif view_type == "all":
             cursor.execute('''
                 SELECT SUBSTR(minute_key, 12, 2) as hour, SUM(count) as requests
                 FROM usage_minute
@@ -2462,6 +2513,7 @@ async def delete_domain(request: Request, domain: str, admin_user: str = Depends
 async def get_analytics_dashboard(
     days: int = 30,
     view_type: str = "all",
+    identifier: Optional[str] = None,
     admin_user: str = Depends(verify_admin_session)
 ):
     """Get comprehensive analytics data for admin dashboard
@@ -2469,6 +2521,7 @@ async def get_analytics_dashboard(
     Args:
         days: Number of days to analyze (1-365)
         view_type: Filter by 'all', 'api_key', or 'domain'
+        identifier: Optional specific API key hash or domain to filter by
     """
     if days < 1 or days > 365:
         raise HTTPException(status_code=400, detail="Days must be between 1 and 365")
@@ -2477,7 +2530,7 @@ async def get_analytics_dashboard(
         raise HTTPException(status_code=400, detail="view_type must be 'all', 'api_key', or 'domain'")
     
     try:
-        analytics = get_usage_analytics(days, view_type)
+        analytics = get_usage_analytics(days, view_type, identifier)
         summary = get_usage_summary()
         violations = get_rate_limit_violations()
         
@@ -2486,6 +2539,7 @@ async def get_analytics_dashboard(
             "summary": summary,
             "violations": violations,
             "view_type": view_type,
+            "identifier": identifier,
             "generated_at": datetime.now().isoformat()
         }
     except Exception as e:
@@ -2517,6 +2571,67 @@ async def get_violations_data(admin_user: str = Depends(verify_admin_session)):
         return get_rate_limit_violations()
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to load violations: {str(e)}")
+
+@app.get("/admin/analytics/api-keys")
+async def get_analytics_api_keys(admin_user: str = Depends(verify_admin_session)):
+    """Get list of API keys for analytics dropdown"""
+    conn = sqlite3.connect('astrology_db.sqlite3')
+    cursor = conn.cursor()
+    
+    try:
+        cursor.execute('''
+            SELECT key_hash, name, description, is_active
+            FROM api_keys 
+            WHERE is_active = 1
+            ORDER BY name
+        ''')
+        
+        api_keys = []
+        for row in cursor.fetchall():
+            key_hash, name, description, is_active = row
+            api_keys.append({
+                'key_hash': key_hash,
+                'name': name,
+                'description': description or 'No description',
+                'is_active': bool(is_active)
+            })
+        
+        conn.close()
+        return {"api_keys": api_keys}
+        
+    except Exception as e:
+        conn.close()
+        raise HTTPException(status_code=500, detail=f"Failed to load API keys: {str(e)}")
+
+@app.get("/admin/analytics/domains")
+async def get_analytics_domains(admin_user: str = Depends(verify_admin_session)):
+    """Get list of domains for analytics dropdown"""
+    conn = sqlite3.connect('astrology_db.sqlite3')
+    cursor = conn.cursor()
+    
+    try:
+        cursor.execute('''
+            SELECT domain, description, is_active
+            FROM authorized_domains 
+            WHERE is_active = 1
+            ORDER BY domain
+        ''')
+        
+        domains = []
+        for row in cursor.fetchall():
+            domain, description, is_active = row
+            domains.append({
+                'domain': domain,
+                'description': description or 'No description',
+                'is_active': bool(is_active)
+            })
+        
+        conn.close()
+        return {"domains": domains}
+        
+    except Exception as e:
+        conn.close()
+        raise HTTPException(status_code=500, detail=f"Failed to load domains: {str(e)}")
 
 @app.get("/ayanamsha-options")
 async def get_ayanamsha_options():
