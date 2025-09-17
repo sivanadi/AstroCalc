@@ -521,12 +521,68 @@ def init_database():
         )
     ''')
     
+    # Create app_settings table for system configuration
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS app_settings (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    
+    # Create api_diagnostics table for logging diagnostic information
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS api_diagnostics (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ts TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            request_id TEXT,
+            path TEXT,
+            client_ip TEXT,
+            origin TEXT,
+            user_agent TEXT,
+            auth_scheme TEXT,
+            auth_present BOOLEAN,
+            key_hash_prefix TEXT,
+            key_active BOOLEAN,
+            key_exists BOOLEAN,
+            domain TEXT,
+            outcome TEXT,
+            reason_code TEXT,
+            rl_minute INTEGER,
+            rl_day INTEGER,
+            rl_month INTEGER,
+            rl_minute_limit INTEGER,
+            rl_day_limit INTEGER,
+            rl_month_limit INTEGER
+        )
+    ''')
+    
     # Create indexes for performance
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_usage_minute_identifier ON usage_minute(identifier, minute_key)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_usage_day_identifier ON usage_day(identifier, day_key)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_usage_month_identifier ON usage_month(identifier, month_key)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_api_keys_hash ON api_keys(key_hash)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_domains_domain ON authorized_domains(domain)')
+    
+    # Indexes for new diagnostic tables
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_api_diagnostics_ts ON api_diagnostics(ts)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_api_diagnostics_outcome ON api_diagnostics(outcome)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_api_diagnostics_client_ip ON api_diagnostics(client_ip)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_api_diagnostics_path ON api_diagnostics(path)')
+    
+    # Initialize default app settings
+    default_settings = [
+        ('api_key_enforcement_enabled', 'true'),
+        ('diag_bypass_enabled', 'false'),
+        ('diag_bypass_expires_at', ''),
+        ('diag_bypass_allowed_ips', ''),
+        ('diag_mode', 'false'),
+    ]
+    
+    for key, value in default_settings:
+        cursor.execute('''
+            INSERT OR IGNORE INTO app_settings (key, value) VALUES (?, ?)
+        ''', (key, value))
     
     conn.commit()
     conn.close()
