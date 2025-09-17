@@ -112,6 +112,11 @@
             <form onsubmit="createApiKey(event)">
                 <input type="text" id="keyName" placeholder="API Key Name" required>
                 <input type="text" id="keyDesc" placeholder="Description (optional)">
+                <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin: 8px 0;">
+                    <input type="number" id="keyPerMinute" placeholder="Per minute limit" min="1" value="60">
+                    <input type="number" id="keyPerDay" placeholder="Daily limit" min="1" value="1000">
+                    <input type="number" id="keyPerMonth" placeholder="Monthly limit" min="1" value="30000">
+                </div>
                 <button type="submit">Create API Key</button>
             </form>
             <div id="apiKeysList"></div>
@@ -121,6 +126,11 @@
             <h3>Authorized Domains</h3>
             <form onsubmit="addDomain(event)">
                 <input type="text" id="domainName" placeholder="Domain (e.g., example.com)" required>
+                <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin: 8px 0;">
+                    <input type="number" id="domainPerMinute" placeholder="Per minute limit" min="1" value="10">
+                    <input type="number" id="domainPerDay" placeholder="Daily limit" min="1" value="100">
+                    <input type="number" id="domainPerMonth" placeholder="Monthly limit" min="1" value="3000">
+                </div>
                 <button type="submit">Add Domain</button>
             </form>
             <div id="domainsList"></div>
