@@ -374,6 +374,54 @@ class DomainResponse(BaseModel):
     created_at: str
     updated_at: str
 
+# Diagnostic Models
+class DiagnosticToggleRequest(BaseModel):
+    enabled: bool
+    duration_minutes: Optional[int] = Field(None, ge=1, le=1440)  # Max 24 hours
+    allowed_ips: Optional[str] = Field(None, max_length=500)  # Comma-separated IPs
+    
+class DiagnosticTestRequest(BaseModel):
+    test_type: str = Field(..., pattern="^(api_key|domain|bypass)$")
+    api_key: Optional[str] = None
+    domain: Optional[str] = None
+
+class DiagnosticLogEntry(BaseModel):
+    id: int
+    ts: str
+    request_id: str
+    path: str
+    client_ip: str
+    origin: str
+    user_agent: str
+    auth_scheme: str
+    auth_present: bool
+    key_hash_prefix: str
+    key_active: Optional[bool]
+    key_exists: Optional[bool]
+    domain: str
+    outcome: str
+    reason_code: str
+    rl_minute: Optional[int]
+    rl_day: Optional[int]
+    rl_month: Optional[int]
+    rl_minute_limit: Optional[int]
+    rl_day_limit: Optional[int]
+    rl_month_limit: Optional[int]
+
+class DiagnosticStatusResponse(BaseModel):
+    api_key_enforcement_enabled: bool
+    bypass_enabled: bool
+    bypass_expires_at: Optional[str]
+    bypass_allowed_ips: str
+    diagnostic_mode: bool
+    environment: str
+
+class DiagnosticLogsResponse(BaseModel):
+    logs: List[DiagnosticLogEntry]
+    total: int
+    page: int
+    page_size: int
+
 
 # Utility functions
 def decimal_to_dms(decimal_degrees):
@@ -3059,6 +3107,244 @@ async def get_analytics_domains(admin_user: str = Depends(verify_admin_session))
     except Exception as e:
         conn.close()
         raise HTTPException(status_code=500, detail=f"Failed to load domains: {str(e)}")
+
+# Diagnostic Admin Endpoints
+@app.get("/admin/diagnostics/status", response_model=DiagnosticStatusResponse)
+async def get_diagnostic_status(admin_user: str = Depends(verify_admin_session)):
+    """Get current diagnostic and bypass status"""
+    try:
+        return DiagnosticStatusResponse(
+            api_key_enforcement_enabled=get_setting_bool('api_key_enforcement_enabled', True),
+            bypass_enabled=get_setting_bool('diag_bypass_enabled', False),
+            bypass_expires_at=get_setting('diag_bypass_expires_at', ''),
+            bypass_allowed_ips=get_setting('diag_bypass_allowed_ips', ''),
+            diagnostic_mode=get_setting_bool('diag_mode', False),
+            environment=os.getenv('ENVIRONMENT', 'development')
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get diagnostic status: {str(e)}")
+
+@app.post("/admin/diagnostics/toggle")
+async def toggle_api_key_enforcement(
+    toggle_request: DiagnosticToggleRequest, 
+    admin_user: str = Depends(verify_admin_session)
+):
+    """Toggle API key enforcement with mandatory duration and IP restrictions when disabled"""
+    try:
+        # Security: Require duration when disabling enforcement
+        if not toggle_request.enabled and not toggle_request.duration_minutes:
+            raise HTTPException(
+                status_code=400, 
+                detail="Duration is required when disabling API key enforcement for security"
+            )
+        
+        # Validate IP addresses format if provided
+        if toggle_request.allowed_ips:
+            import ipaddress
+            ips = [ip.strip() for ip in toggle_request.allowed_ips.split(',') if ip.strip()]
+            validated_ips = []
+            for ip in ips:
+                try:
+                    # Support both single IPs and CIDR ranges
+                    ipaddress.ip_network(ip, strict=False)
+                    validated_ips.append(ip)
+                except ValueError:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Invalid IP address or CIDR range: {ip}"
+                    )
+            validated_ips_str = ','.join(validated_ips)
+        else:
+            validated_ips_str = ''
+        
+        # Update API key enforcement setting
+        update_setting('api_key_enforcement_enabled', str(toggle_request.enabled).lower())
+        
+        # If disabling enforcement, set up time-limited bypass with IP restrictions
+        if not toggle_request.enabled:
+            expires_at = datetime.now() + timedelta(minutes=toggle_request.duration_minutes)
+            update_setting('diag_bypass_enabled', 'true')
+            update_setting('diag_bypass_expires_at', expires_at.isoformat())
+            # Require at least one IP for bypass (empty means no access allowed)
+            if not validated_ips_str:
+                client_ip = get_client_ip(request)
+                validated_ips_str = client_ip  # Default to current admin IP
+            update_setting('diag_bypass_allowed_ips', validated_ips_str)
+            
+            return {
+                "message": f"API key enforcement disabled for {toggle_request.duration_minutes} minutes",
+                "enforcement_enabled": False,
+                "bypass_expires_at": expires_at.isoformat(),
+                "allowed_ips": validated_ips_str,
+                "auto_expires_in_seconds": toggle_request.duration_minutes * 60
+            }
+        else:
+            # If enabling enforcement, clear bypass settings
+            update_setting('diag_bypass_enabled', 'false')
+            update_setting('diag_bypass_expires_at', '')
+            update_setting('diag_bypass_allowed_ips', '')
+            
+            return {
+                "message": "API key enforcement enabled successfully",
+                "enforcement_enabled": True,
+                "bypass_expires_at": None
+            }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to toggle enforcement: {str(e)}")
+
+@app.post("/admin/diagnostics/test")
+async def run_diagnostic_test(
+    test_request: DiagnosticTestRequest,
+    admin_user: str = Depends(verify_admin_session)
+):
+    """Run diagnostic tests to check API access scenarios"""
+    try:
+        results = []
+        
+        if test_request.test_type == "api_key" and test_request.api_key:
+            # Test API key validation
+            key_hash = hashlib.sha256(test_request.api_key.encode()).hexdigest()
+            key_limits = get_api_key_limits(key_hash)
+            
+            results.append({
+                "test": "API Key Existence",
+                "result": "PASS" if key_limits else "FAIL",
+                "details": "Key found in database" if key_limits else "Key not found"
+            })
+            
+            if key_limits:
+                results.append({
+                    "test": "API Key Status", 
+                    "result": "PASS" if key_limits['is_active'] else "FAIL",
+                    "details": f"Key is {'active' if key_limits['is_active'] else 'inactive'}"
+                })
+                
+                results.append({
+                    "test": "Rate Limits",
+                    "result": "INFO",
+                    "details": f"Per minute: {key_limits['per_minute_limit']}, Per day: {key_limits['per_day_limit']}, Per month: {key_limits['per_month_limit']}"
+                })
+        
+        elif test_request.test_type == "bypass":
+            # Test bypass conditions
+            enforcement_enabled = get_setting_bool('api_key_enforcement_enabled', True)
+            bypass_enabled = get_setting_bool('diag_bypass_enabled', False)
+            
+            results.append({
+                "test": "API Key Enforcement",
+                "result": "ENABLED" if enforcement_enabled else "DISABLED",
+                "details": f"Global API key enforcement is {'on' if enforcement_enabled else 'off'}"
+            })
+            
+            results.append({
+                "test": "Diagnostic Bypass",
+                "result": "ENABLED" if bypass_enabled else "DISABLED", 
+                "details": f"Diagnostic bypass is {'active' if bypass_enabled else 'inactive'}"
+            })
+            
+            if bypass_enabled:
+                expires_at = get_setting('diag_bypass_expires_at', '')
+                if expires_at:
+                    try:
+                        expire_time = datetime.fromisoformat(expires_at)
+                        if datetime.now() > expire_time:
+                            results.append({
+                                "test": "Bypass Expiry",
+                                "result": "EXPIRED",
+                                "details": f"Bypass expired at {expires_at}"
+                            })
+                        else:
+                            results.append({
+                                "test": "Bypass Expiry", 
+                                "result": "ACTIVE",
+                                "details": f"Bypass expires at {expires_at}"
+                            })
+                    except:
+                        results.append({
+                            "test": "Bypass Expiry",
+                            "result": "ERROR",
+                            "details": "Invalid expiry format"
+                        })
+        
+        return {
+            "test_type": test_request.test_type,
+            "results": results,
+            "timestamp": datetime.now().isoformat()
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Diagnostic test failed: {str(e)}")
+
+@app.get("/admin/diagnostics/logs", response_model=DiagnosticLogsResponse)
+async def get_diagnostic_logs(
+    page: int = 1,
+    page_size: int = 50,
+    outcome: Optional[str] = None,
+    client_ip: Optional[str] = None,
+    admin_user: str = Depends(verify_admin_session)
+):
+    """Get diagnostic logs with pagination and filtering"""
+    try:
+        conn = sqlite3.connect('astrology_db.sqlite3')
+        cursor = conn.cursor()
+        
+        # Build WHERE clause for filtering
+        where_conditions = []
+        params = []
+        
+        if outcome:
+            where_conditions.append('outcome = ?')
+            params.append(outcome)
+            
+        if client_ip:
+            where_conditions.append('client_ip = ?')
+            params.append(client_ip)
+        
+        where_clause = 'WHERE ' + ' AND '.join(where_conditions) if where_conditions else ''
+        
+        # Get total count
+        count_query = f'SELECT COUNT(*) FROM api_diagnostics {where_clause}'
+        cursor.execute(count_query, params)
+        total = cursor.fetchone()[0]
+        
+        # Get paginated results
+        offset = (page - 1) * page_size
+        query = f'''
+            SELECT id, ts, request_id, path, client_ip, origin, user_agent, auth_scheme,
+                   auth_present, key_hash_prefix, key_active, key_exists, domain, outcome,
+                   reason_code, rl_minute, rl_day, rl_month, rl_minute_limit, 
+                   rl_day_limit, rl_month_limit
+            FROM api_diagnostics
+            {where_clause}
+            ORDER BY ts DESC
+            LIMIT ? OFFSET ?
+        '''
+        cursor.execute(query, params + [page_size, offset])
+        
+        logs = []
+        for row in cursor.fetchall():
+            logs.append(DiagnosticLogEntry(
+                id=row[0], ts=row[1], request_id=row[2], path=row[3],
+                client_ip=row[4], origin=row[5], user_agent=row[6], 
+                auth_scheme=row[7], auth_present=bool(row[8]), key_hash_prefix=row[9],
+                key_active=row[10], key_exists=row[11], domain=row[12], 
+                outcome=row[13], reason_code=row[14], rl_minute=row[15],
+                rl_day=row[16], rl_month=row[17], rl_minute_limit=row[18],
+                rl_day_limit=row[19], rl_month_limit=row[20]
+            ))
+        
+        conn.close()
+        
+        return DiagnosticLogsResponse(
+            logs=logs,
+            total=total,
+            page=page,
+            page_size=page_size
+        )
+        
+    except Exception as e:
+        conn.close() if 'conn' in locals() else None
+        raise HTTPException(status_code=500, detail=f"Failed to get diagnostic logs: {str(e)}")
 
 @app.get("/ayanamsha-options")
 async def get_ayanamsha_options():
