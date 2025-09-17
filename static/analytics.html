@@ -920,6 +920,7 @@
 
         // Initialize on page load
         document.addEventListener('DOMContentLoaded', function() {
+            const currentToken = localStorage.getItem('adminToken');
             if (!currentToken) {
                 alert('No authentication token found. Redirecting to login...');
                 window.location.href = '/static/admin.html';
