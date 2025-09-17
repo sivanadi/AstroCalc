@@ -275,6 +275,102 @@
         </div>
         
         <div class="section">
+            <h3>🔧 Diagnosis & Debugging</h3>
+            <p>Diagnostic tools for troubleshooting API access issues and debugging authentication problems.</p>
+            
+            <!-- Current Status Display -->
+            <div style="background: #e8f4fd; border: 1px solid #bee5eb; border-radius: 8px; padding: 15px; margin: 15px 0;">
+                <h4 style="margin: 0 0 10px 0; color: #0c5460;">🚦 Current Status</h4>
+                <div id="diagnosticStatus">
+                    <p>Loading diagnostic status...</p>
+                </div>
+            </div>
+            
+            <!-- API Key Enforcement Toggle -->
+            <div style="background: #fff3cd; border: 1px solid #ffeaa7; border-radius: 8px; padding: 15px; margin: 15px 0;">
+                <h4 style="margin: 0 0 10px 0; color: #856404;">⚠️ API Key Enforcement Control</h4>
+                <p style="color: #856404; font-size: 14px; margin: 0 0 15px 0;">
+                    <strong>Warning:</strong> Disabling API key enforcement removes all authentication. Use only for debugging.
+                </p>
+                
+                <form onsubmit="toggleEnforcement(event)">
+                    <div style="display: flex; gap: 15px; align-items: center; margin: 10px 0;">
+                        <label style="font-weight: 600;">
+                            <input type="radio" name="enforcement" value="enable" checked> Enable Enforcement
+                        </label>
+                        <label style="font-weight: 600;">
+                            <input type="radio" name="enforcement" value="disable"> Disable Enforcement
+                        </label>
+                    </div>
+                    
+                    <div id="bypassSettings" style="display: none; margin: 15px 0; padding: 15px; background: #f8f9fa; border-radius: 5px;">
+                        <div class="form-group">
+                            <label class="form-label">Duration (minutes) *</label>
+                            <input type="number" id="bypassDuration" min="1" max="1440" value="30" required>
+                            <small style="color: #6c757d;">Auto-expire after specified time (max 24 hours)</small>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Allowed IPs (optional)</label>
+                            <input type="text" id="allowedIPs" placeholder="192.168.1.1, 10.0.0.0/8" style="margin: 0;">
+                            <small style="color: #6c757d;">Comma-separated IPs/CIDR ranges. Leave empty to use your current IP.</small>
+                        </div>
+                    </div>
+                    
+                    <button type="submit">Apply Changes</button>
+                </form>
+                <div id="toggleMessage" style="margin-top: 10px;"></div>
+            </div>
+            
+            <!-- Diagnostic Tests -->
+            <div style="background: #d4edda; border: 1px solid #c3e6cb; border-radius: 8px; padding: 15px; margin: 15px 0;">
+                <h4 style="margin: 0 0 10px 0; color: #155724;">🔍 Diagnostic Tests</h4>
+                
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 15px; margin: 15px 0;">
+                    
+                    <!-- API Key Test -->
+                    <div style="background: white; border: 1px solid #dee2e6; border-radius: 5px; padding: 15px;">
+                        <h5 style="margin: 0 0 10px 0;">Test API Key</h5>
+                        <form onsubmit="runTest(event, 'api_key')">
+                            <input type="text" id="testApiKey" placeholder="Enter API key to test" required style="margin-bottom: 10px;">
+                            <button type="submit" style="font-size: 14px; padding: 8px 16px;">Test API Key</button>
+                        </form>
+                    </div>
+                    
+                    <!-- Bypass Test -->
+                    <div style="background: white; border: 1px solid #dee2e6; border-radius: 5px; padding: 15px;">
+                        <h5 style="margin: 0 0 10px 0;">Test Bypass Settings</h5>
+                        <form onsubmit="runTest(event, 'bypass')">
+                            <button type="submit" style="font-size: 14px; padding: 8px 16px;">Test Bypass Conditions</button>
+                        </form>
+                    </div>
+                </div>
+                
+                <div id="testResults" style="margin-top: 15px;"></div>
+            </div>
+            
+            <!-- Diagnostic Logs -->
+            <div style="background: #f8f9fa; border: 1px solid #dee2e6; border-radius: 8px; padding: 15px; margin: 15px 0;">
+                <h4 style="margin: 0 0 10px 0; color: #495057;">📋 Diagnostic Logs</h4>
+                
+                <div style="display: flex; gap: 10px; margin: 10px 0; align-items: center; flex-wrap: wrap;">
+                    <select id="logOutcomeFilter" style="padding: 5px; border: 1px solid #ced4da; border-radius: 4px;">
+                        <option value="">All Outcomes</option>
+                        <option value="allowed">Allowed</option>
+                        <option value="denied">Denied</option>
+                        <option value="bypass_active">Bypass Active</option>
+                        <option value="enforcement_disabled">Enforcement Disabled</option>
+                    </select>
+                    <input type="text" id="logIpFilter" placeholder="Filter by IP" style="padding: 5px; border: 1px solid #ced4da; border-radius: 4px; margin: 0; width: 150px;">
+                    <button onclick="loadDiagnosticLogs()" style="padding: 5px 15px; font-size: 14px;">Refresh Logs</button>
+                </div>
+                
+                <div id="diagnosticLogs" style="max-height: 400px; overflow-y: auto; border: 1px solid #dee2e6; background: white; border-radius: 5px;">
+                    <p style="text-align: center; padding: 20px; color: #6c757d;">Click "Refresh Logs" to load diagnostic data</p>
+                </div>
+            </div>
+        </div>
+        
+        <div class="section">
             <h3>🔐 Change Password</h3>
             <form onsubmit="changePassword(event)">
                 <div class="form-group">
