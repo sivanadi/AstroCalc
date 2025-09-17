@@ -2297,8 +2297,23 @@ async def admin_logout_all(request: Request, admin_user: str = Depends(verify_ad
 @app.get("/admin/api-keys")
 async def get_api_keys(request: Request, admin_user: str = Depends(verify_admin_session)):
     """Get all API keys from database with limits"""
-    result = get_api_keys_paginated()
-    return result
+    paginated_result = get_api_keys_paginated()
+    
+    # Convert array format to object format expected by frontend
+    api_keys = {}
+    for key_info in paginated_result['keys']:
+        api_keys[key_info['key_hash']] = {
+            'name': key_info['name'],
+            'description': key_info['description'],
+            'per_minute_limit': key_info['per_minute_limit'],
+            'per_day_limit': key_info['per_day_limit'],
+            'per_month_limit': key_info['per_month_limit'],
+            'is_active': key_info['is_active'],
+            'created_at': key_info['created_at'],
+            'updated_at': key_info['updated_at']
+        }
+    
+    return {"api_keys": api_keys}
 
 @app.post("/admin/api-keys")
 async def create_api_key(request: Request, key_data: CreateAPIKeyRequest, admin_user: str = Depends(verify_admin_session)):
