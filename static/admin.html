@@ -216,13 +216,34 @@
                 apiKeysList.appendChild(title);
                 
                 for (let key in data.api_keys) {
+                    const keyInfo = data.api_keys[key];
                     const keyDiv = document.createElement('div');
-                    const keyText = document.createTextNode(data.api_keys[key].name + ' - ' + key + ' ');
-                    keyDiv.appendChild(keyText);
+                    keyDiv.style.border = '1px solid #ddd';
+                    keyDiv.style.padding = '10px';
+                    keyDiv.style.margin = '5px 0';
+                    keyDiv.style.borderRadius = '5px';
+                    keyDiv.style.backgroundColor = '#f9f9f9';
+                    
+                    const nameText = document.createElement('div');
+                    nameText.innerHTML = `<strong>${keyInfo.name}</strong> - ${key}`;
+                    keyDiv.appendChild(nameText);
+                    
+                    const limitsText = document.createElement('div');
+                    limitsText.innerHTML = `<small>Limits: ${keyInfo.per_minute_limit}/min, ${keyInfo.per_day_limit}/day, ${keyInfo.per_month_limit}/month</small>`;
+                    limitsText.style.color = '#666';
+                    keyDiv.appendChild(limitsText);
+                    
+                    if (keyInfo.description) {
+                        const descText = document.createElement('div');
+                        descText.innerHTML = `<small><em>${keyInfo.description}</em></small>`;
+                        descText.style.color = '#888';
+                        keyDiv.appendChild(descText);
+                    }
                     
                     const deleteBtn = document.createElement('button');
                     deleteBtn.textContent = 'Delete';
                     deleteBtn.style.backgroundColor = '#f44336';
+                    deleteBtn.style.marginTop = '5px';
                     deleteBtn.onclick = () => deleteApiKey(key);
                     keyDiv.appendChild(deleteBtn);
                     
@@ -249,12 +270,25 @@
                 
                 data.domains.forEach(domainObj => {
                     const domainDiv = document.createElement('div');
-                    const domainText = document.createTextNode(domainObj.domain + ' ');
-                    domainDiv.appendChild(domainText);
+                    domainDiv.style.border = '1px solid #ddd';
+                    domainDiv.style.padding = '10px';
+                    domainDiv.style.margin = '5px 0';
+                    domainDiv.style.borderRadius = '5px';
+                    domainDiv.style.backgroundColor = '#f9f9f9';
+                    
+                    const nameText = document.createElement('div');
+                    nameText.innerHTML = `<strong>${domainObj.domain}</strong>`;
+                    domainDiv.appendChild(nameText);
+                    
+                    const limitsText = document.createElement('div');
+                    limitsText.innerHTML = `<small>Limits: ${domainObj.per_minute_limit}/min, ${domainObj.per_day_limit}/day, ${domainObj.per_month_limit}/month</small>`;
+                    limitsText.style.color = '#666';
+                    domainDiv.appendChild(limitsText);
                     
                     const deleteBtn = document.createElement('button');
                     deleteBtn.textContent = 'Delete';
                     deleteBtn.style.backgroundColor = '#f44336';
+                    deleteBtn.style.marginTop = '5px';
                     deleteBtn.onclick = () => deleteDomain(domainObj.domain);
                     domainDiv.appendChild(deleteBtn);
                     
