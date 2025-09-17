@@ -3126,7 +3126,8 @@ async def get_diagnostic_status(admin_user: str = Depends(verify_admin_session))
 
 @app.post("/admin/diagnostics/toggle")
 async def toggle_api_key_enforcement(
-    toggle_request: DiagnosticToggleRequest, 
+    toggle_request: DiagnosticToggleRequest,
+    request: Request,
     admin_user: str = Depends(verify_admin_session)
 ):
     """Toggle API key enforcement with mandatory duration and IP restrictions when disabled"""
@@ -3162,7 +3163,9 @@ async def toggle_api_key_enforcement(
         
         # If disabling enforcement, set up time-limited bypass with IP restrictions
         if not toggle_request.enabled:
-            expires_at = datetime.now() + timedelta(minutes=toggle_request.duration_minutes)
+            # At this point duration_minutes is guaranteed to be set due to validation above
+            duration = toggle_request.duration_minutes or 30  # Fallback to 30 minutes
+            expires_at = datetime.now() + timedelta(minutes=duration)
             update_setting('diag_bypass_enabled', 'true')
             update_setting('diag_bypass_expires_at', expires_at.isoformat())
             # Require at least one IP for bypass (empty means no access allowed)
@@ -3172,11 +3175,11 @@ async def toggle_api_key_enforcement(
             update_setting('diag_bypass_allowed_ips', validated_ips_str)
             
             return {
-                "message": f"API key enforcement disabled for {toggle_request.duration_minutes} minutes",
+                "message": f"API key enforcement disabled for {duration} minutes",
                 "enforcement_enabled": False,
                 "bypass_expires_at": expires_at.isoformat(),
                 "allowed_ips": validated_ips_str,
-                "auto_expires_in_seconds": toggle_request.duration_minutes * 60
+                "auto_expires_in_seconds": duration * 60
             }
         else:
             # If enabling enforcement, clear bypass settings
@@ -3284,6 +3287,7 @@ async def get_diagnostic_logs(
     admin_user: str = Depends(verify_admin_session)
 ):
     """Get diagnostic logs with pagination and filtering"""
+    conn = None
     try:
         conn = sqlite3.connect('astrology_db.sqlite3')
         cursor = conn.cursor()
@@ -3343,7 +3347,8 @@ async def get_diagnostic_logs(
         )
         
     except Exception as e:
-        conn.close() if 'conn' in locals() else None
+        if conn:
+            conn.close()
         raise HTTPException(status_code=500, detail=f"Failed to get diagnostic logs: {str(e)}")
 
 @app.get("/ayanamsha-options")
