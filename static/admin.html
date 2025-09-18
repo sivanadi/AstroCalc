@@ -522,6 +522,12 @@
                         viewHashBtn.onclick = () => showKeyHash(key, keyInfo.name);
                         actions.appendChild(viewHashBtn);
                         
+                        const editBtn = document.createElement('button');
+                        editBtn.textContent = 'Edit Limits';
+                        editBtn.style.cssText = 'background: #28a745; color: white; padding: 6px 12px; font-size: 12px; border-radius: 4px; margin: 0 5px 0 0; border: none; cursor: pointer;';
+                        editBtn.onclick = () => showEditApiKeyModal(key, keyInfo);
+                        actions.appendChild(editBtn);
+                        
                         const deleteBtn = document.createElement('button');
                         deleteBtn.textContent = 'Delete';
                         deleteBtn.className = 'btn-danger';
@@ -582,6 +588,13 @@
                         
                         const actions = document.createElement('div');
                         actions.className = 'item-actions';
+                        
+                        const editBtn = document.createElement('button');
+                        editBtn.textContent = 'Edit Limits';
+                        editBtn.style.cssText = 'background: #28a745; color: white; padding: 6px 12px; font-size: 12px; border-radius: 4px; margin: 0 5px 0 0; border: none; cursor: pointer;';
+                        editBtn.onclick = () => showEditDomainModal(domainObj);
+                        actions.appendChild(editBtn);
+                        
                         const deleteBtn = document.createElement('button');
                         deleteBtn.textContent = 'Delete';
                         deleteBtn.className = 'btn-danger';
@@ -1341,6 +1354,176 @@
             hashValue.focus();
         }
         
+        // Edit API Key Modal Functions
+        function showEditApiKeyModal(keyHash, keyInfo) {
+            // Create modal overlay
+            const modal = document.createElement('div');
+            modal.style.cssText = 'position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: flex; justify-content: center; align-items: center; z-index: 1000;';
+            
+            // Create modal content
+            const modalContent = document.createElement('div');
+            modalContent.style.cssText = 'background: white; border-radius: 12px; padding: 30px; max-width: 500px; width: 90%; box-shadow: 0 10px 30px rgba(0,0,0,0.3);';
+            
+            modalContent.innerHTML = `
+                <h3 style="margin: 0 0 20px 0; color: #495057;">Edit API Key Limits - ${keyInfo.name}</h3>
+                <form id="editApiKeyForm">
+                    <div class="form-group">
+                        <label class="form-label">Per Minute Limit</label>
+                        <input type="number" id="editKeyPerMinute" min="1" value="${keyInfo.per_minute_limit}" required>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Per Day Limit</label>
+                        <input type="number" id="editKeyPerDay" min="1" value="${keyInfo.per_day_limit}" required>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Per Month Limit</label>
+                        <input type="number" id="editKeyPerMonth" min="1" value="${keyInfo.per_month_limit}" required>
+                    </div>
+                    <div style="display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px;">
+                        <button type="button" onclick="this.closest('.modal-overlay').remove()" style="background: #6c757d; color: white; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer;">Cancel</button>
+                        <button type="submit" style="background: #28a745; color: white; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer;">Update Limits</button>
+                    </div>
+                </form>
+                <div id="editApiKeyMessage"></div>
+            `;
+            
+            modal.className = 'modal-overlay';
+            modal.appendChild(modalContent);
+            
+            // Handle form submission
+            modalContent.querySelector('#editApiKeyForm').onsubmit = async function(e) {
+                e.preventDefault();
+                
+                const per_minute_limit = parseInt(document.getElementById('editKeyPerMinute').value);
+                const per_day_limit = parseInt(document.getElementById('editKeyPerDay').value);
+                const per_month_limit = parseInt(document.getElementById('editKeyPerMonth').value);
+                
+                try {
+                    const response = await fetch(`/admin/api-keys/${keyHash}/limits`, {
+                        method: 'PUT',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': 'Bearer ' + sessionToken
+                        },
+                        body: JSON.stringify({
+                            per_minute_limit,
+                            per_day_limit,
+                            per_month_limit
+                        })
+                    });
+                    
+                    const data = await response.json();
+                    const messageDiv = document.getElementById('editApiKeyMessage');
+                    
+                    if (response.ok) {
+                        messageDiv.innerHTML = '<div class="success">API key limits updated successfully!</div>';
+                        setTimeout(() => {
+                            modal.remove();
+                            loadApiKeys(); // Refresh the list
+                        }, 1500);
+                    } else {
+                        messageDiv.innerHTML = `<div class="error">${data.detail}</div>`;
+                    }
+                } catch (error) {
+                    document.getElementById('editApiKeyMessage').innerHTML = '<div class="error">Failed to update API key limits</div>';
+                }
+            };
+            
+            // Close on background click
+            modal.onclick = function(e) {
+                if (e.target === modal) {
+                    modal.remove();
+                }
+            };
+            
+            document.body.appendChild(modal);
+        }
+        
+        // Edit Domain Modal Functions
+        function showEditDomainModal(domainObj) {
+            // Create modal overlay
+            const modal = document.createElement('div');
+            modal.style.cssText = 'position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: flex; justify-content: center; align-items: center; z-index: 1000;';
+            
+            // Create modal content
+            const modalContent = document.createElement('div');
+            modalContent.style.cssText = 'background: white; border-radius: 12px; padding: 30px; max-width: 500px; width: 90%; box-shadow: 0 10px 30px rgba(0,0,0,0.3);';
+            
+            modalContent.innerHTML = `
+                <h3 style="margin: 0 0 20px 0; color: #495057;">Edit Domain Limits - ${domainObj.domain}</h3>
+                <form id="editDomainForm">
+                    <div class="form-group">
+                        <label class="form-label">Per Minute Limit</label>
+                        <input type="number" id="editDomainPerMinute" min="1" value="${domainObj.per_minute_limit}" required>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Per Day Limit</label>
+                        <input type="number" id="editDomainPerDay" min="1" value="${domainObj.per_day_limit}" required>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Per Month Limit</label>
+                        <input type="number" id="editDomainPerMonth" min="1" value="${domainObj.per_month_limit}" required>
+                    </div>
+                    <div style="display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px;">
+                        <button type="button" onclick="this.closest('.modal-overlay').remove()" style="background: #6c757d; color: white; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer;">Cancel</button>
+                        <button type="submit" style="background: #28a745; color: white; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer;">Update Limits</button>
+                    </div>
+                </form>
+                <div id="editDomainMessage"></div>
+            `;
+            
+            modal.className = 'modal-overlay';
+            modal.appendChild(modalContent);
+            
+            // Handle form submission
+            modalContent.querySelector('#editDomainForm').onsubmit = async function(e) {
+                e.preventDefault();
+                
+                const per_minute_limit = parseInt(document.getElementById('editDomainPerMinute').value);
+                const per_day_limit = parseInt(document.getElementById('editDomainPerDay').value);
+                const per_month_limit = parseInt(document.getElementById('editDomainPerMonth').value);
+                
+                try {
+                    const response = await fetch(`/admin/domains/${encodeURIComponent(domainObj.domain)}/limits`, {
+                        method: 'PUT',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': 'Bearer ' + sessionToken
+                        },
+                        body: JSON.stringify({
+                            per_minute_limit,
+                            per_day_limit,
+                            per_month_limit
+                        })
+                    });
+                    
+                    const data = await response.json();
+                    const messageDiv = document.getElementById('editDomainMessage');
+                    
+                    if (response.ok) {
+                        messageDiv.innerHTML = '<div class="success">Domain limits updated successfully!</div>';
+                        setTimeout(() => {
+                            modal.remove();
+                            loadDomains(); // Refresh the list
+                        }, 1500);
+                    } else {
+                        messageDiv.innerHTML = `<div class="error">${data.detail}</div>`;
+                    }
+                } catch (error) {
+                    document.getElementById('editDomainMessage').innerHTML = '<div class="error">Failed to update domain limits</div>';
+                }
+            };
+            
+            // Close on background click
+            modal.onclick = function(e) {
+                if (e.target === modal) {
+                    modal.remove();
+                }
+            };
+            
+            document.body.appendChild(modal);
+        }
+
         // Add event listeners for bypass settings toggle
         document.addEventListener('DOMContentLoaded', function() {
             // Add immediate radio button change handlers
