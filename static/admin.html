@@ -213,7 +213,10 @@
         <h2>Admin Login</h2>
         <form onsubmit="adminLogin(event)">
             <input type="text" id="username" placeholder="Username" required>
-            <input type="password" id="password" placeholder="Password" required>
+            <div style="position: relative;">
+                <input type="password" id="password" placeholder="Password" required style="padding-right: 2.5rem;">
+                <button type="button" id="togglePassword" onclick="togglePasswordVisibility()" aria-label="Show password" title="Show password" style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); background: none; border: none; cursor: pointer; font-size: 16px; color: #667eea; padding: 0; width: auto; min-width: 40px; min-height: 40px;">👁️</button>
+            </div>
             <button type="submit">Login</button>
         </form>
         <div id="loginMessage"></div>
@@ -410,6 +413,25 @@
         
         if (sessionToken) {
             showAdminPanel();
+        }
+        
+        function togglePasswordVisibility() {
+            const passwordInput = document.getElementById('password');
+            const toggleButton = document.getElementById('togglePassword');
+            
+            if (passwordInput.type === 'password') {
+                passwordInput.type = 'text';
+                toggleButton.textContent = '🙈';
+                toggleButton.setAttribute('aria-label', 'Hide password');
+                toggleButton.setAttribute('title', 'Hide password');
+                toggleButton.setAttribute('aria-pressed', 'true');
+            } else {
+                passwordInput.type = 'password';
+                toggleButton.textContent = '👁️';
+                toggleButton.setAttribute('aria-label', 'Show password');
+                toggleButton.setAttribute('title', 'Show password');
+                toggleButton.setAttribute('aria-pressed', 'false');
+            }
         }
         
         async function adminLogin(event) {
