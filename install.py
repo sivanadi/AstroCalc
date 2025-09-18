@@ -21,6 +21,8 @@ class UniversalInstaller:
         self.package_managers = self._detect_package_managers()
         self.container_tools = self._detect_container_tools()
         self.web_servers = self._detect_web_servers()
+        self.replit_env = self._detect_replit_environment()
+        self.cloudpanel_env = self._detect_cloudpanel_environment()
         
     def _detect_platform(self) -> Dict:
         """Detect operating system and architecture"""
@@ -86,6 +88,54 @@ class UniversalInstaller:
         """Detect available web servers"""
         servers = ['nginx', 'apache2', 'httpd', 'caddy']
         return {server: shutil.which(server) is not None for server in servers}
+    
+    def _detect_replit_environment(self) -> Dict[str, any]:
+        """Detect Replit-specific environment details"""
+        replit_indicators = {
+            'is_replit': bool(os.getenv('REPLIT_DEV_DOMAIN')),
+            'replit_domain': os.getenv('REPLIT_DEV_DOMAIN'),
+            'repl_id': os.getenv('REPL_ID'),
+            'repl_owner': os.getenv('REPL_OWNER'),
+            'repl_slug': os.getenv('REPL_SLUG'),
+            'has_nixos': os.path.exists('/etc/os-release') and 'nixos' in open('/etc/os-release', 'r').read().lower() if os.path.exists('/etc/os-release') else False
+        }
+        return replit_indicators
+    
+    def _detect_cloudpanel_environment(self) -> Dict[str, any]:
+        """Detect CloudPanel environment and configuration"""
+        cloudpanel_indicators = {
+            'is_cloudpanel': any([
+                os.path.exists('/usr/local/cloudpanel'),
+                os.path.exists('/home/cloudpanel'),
+                shutil.which('clp') is not None,
+                os.path.exists('/etc/cloudpanel')
+            ]),
+            'has_nginx': shutil.which('nginx') is not None,
+            'has_uwsgi': shutil.which('uwsgi') is not None,
+            'has_systemd': shutil.which('systemctl') is not None,
+            'site_user_pattern': self._detect_site_user_pattern(),
+            'python_versions': self._detect_available_python_versions()
+        }
+        return cloudpanel_indicators
+    
+    def _detect_site_user_pattern(self) -> Optional[str]:
+        """Detect CloudPanel site user pattern"""
+        try:
+            # Check for typical CloudPanel site directory structure
+            home_dirs = [d for d in os.listdir('/home') if d.startswith('site-')]
+            if home_dirs:
+                return home_dirs[0]
+        except (OSError, PermissionError):
+            pass
+        return None
+    
+    def _detect_available_python_versions(self) -> List[str]:
+        """Detect available Python versions"""
+        versions = []
+        for version in ['python3.11', 'python3.10', 'python3.9', 'python3.8', 'python3', 'python']:
+            if shutil.which(version):
+                versions.append(version)
+        return versions
     
     def _run_command(self, command: List[str], check: bool = True) -> subprocess.CompletedProcess:
         """Run command with error handling"""
