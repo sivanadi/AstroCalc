@@ -47,19 +47,40 @@ sed -i.bak "s|your-username/vedic-astrology-calculator|${REPO_URL#https://github
 
 # Create the app
 echo "🏗️ Creating Digital Ocean App..."
-CREATE_OUTPUT=$(doctl apps create deployment/digitalocean/app.yaml --format ID --no-header 2>&1)
+CREATE_OUTPUT=$(doctl apps create --spec deployment/digitalocean/app.yaml --output json 2>/dev/null)
 
-# Extract app ID from output
-if [[ $CREATE_OUTPUT =~ [0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12} ]]; then
-    APP_ID="${BASH_REMATCH[0]}"
+if [ $? -eq 0 ]; then
+    APP_ID=$(echo "$CREATE_OUTPUT" | python3 -c "import sys, json; print(json.load(sys.stdin)['id'])")
     echo "✅ App created with ID: $APP_ID"
 else
-    echo "❌ Failed to create app. Output: $CREATE_OUTPUT"
+    echo "❌ Failed to create app. Please check your configuration and doctl authentication."
+    # Restore original app.yaml
+    if [ -f deployment/digitalocean/app.yaml.bak ]; then
+        mv deployment/digitalocean/app.yaml.bak deployment/digitalocean/app.yaml
+    fi
     exit 1
 fi
 
 echo "⏳ Waiting for deployment to complete..."
-doctl apps get $APP_ID --wait
+# Wait for the app to be deployed (polling approach since --wait isn't available on apps get)
+for i in {1..60}; do
+    STATUS=$(doctl apps get $APP_ID --output json | python3 -c "import sys, json; print(json.load(sys.stdin)['active_deployment']['phase'])" 2>/dev/null)
+    if [ "$STATUS" = "ACTIVE" ]; then
+        echo "✅ Deployment completed successfully!"
+        break
+    elif [ "$STATUS" = "ERROR" ] || [ "$STATUS" = "CANCELED" ]; then
+        echo "❌ Deployment failed with status: $STATUS"
+        exit 1
+    else
+        echo "   Status: $STATUS... (attempt $i/60)"
+        sleep 10
+    fi
+done
+
+if [ "$STATUS" != "ACTIVE" ]; then
+    echo "❌ Deployment timed out after 10 minutes"
+    exit 1
+fi
 
 # Get app URL
 APP_URL=$(doctl apps get $APP_ID --format "DefaultIngress" --no-header)
