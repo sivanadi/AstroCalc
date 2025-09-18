@@ -52,7 +52,11 @@ async def add_security_headers(request: Request, call_next):
     
     # Security headers to prevent common attacks
     response.headers["X-Content-Type-Options"] = "nosniff"
-    response.headers["X-Frame-Options"] = "DENY"
+    # Allow embedding in Replit environment, but deny otherwise
+    if os.getenv('REPLIT_DEV_DOMAIN'):
+        response.headers["X-Frame-Options"] = "SAMEORIGIN"
+    else:
+        response.headers["X-Frame-Options"] = "DENY"
     response.headers["X-XSS-Protection"] = "1; mode=block"
     response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
