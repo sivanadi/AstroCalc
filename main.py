@@ -46,6 +46,26 @@ async def startup_event():
     add_database_indexes()
     print("Database initialization completed")
 
+# Logging filter middleware to reduce health check spam
+@app.middleware("http") 
+async def logging_filter_middleware(request: Request, call_next):
+    import logging
+    
+    # Skip logging for health check endpoints to reduce spam
+    if (request.url.path == "/api" and request.method == "HEAD") or \
+       (request.url.path == "/health" and request.method == "HEAD"):
+        # Temporarily disable uvicorn access logger
+        access_logger = logging.getLogger("uvicorn.access")
+        original_level = access_logger.level
+        access_logger.setLevel(logging.WARNING)
+        try:
+            response = await call_next(request)
+        finally:
+            access_logger.setLevel(original_level)
+        return response
+    else:
+        return await call_next(request)
+
 # Security headers middleware
 @app.middleware("http")
 async def add_security_headers(request: Request, call_next):
