@@ -193,7 +193,7 @@ class ChartRequest(BaseModel):
     second: int = 0  # Added second field
     lat: float
     lon: float
-    tz: str = 'UTC'
+    tz: Optional[str] = None  # Made optional - will auto-detect from coordinates if not provided
     # Legacy fields - kept for backward compatibility
     ayanamsha: str = 'lahiri'  # Will be used as fallback if natal/transit specific ones not provided
     house_system: str = 'placidus'  # Will be used as fallback if natal/transit specific ones not provided
@@ -2420,7 +2420,7 @@ async def calculate_chart_get(
     lon: float,
     minute: int = 0,
     second: int = 0,
-    tz: str = 'UTC',
+    tz: Optional[str] = None,
     ayanamsha: str = 'lahiri',
     house_system: str = 'placidus',
     natal_ayanamsha: str = '',
@@ -2430,6 +2430,9 @@ async def calculate_chart_get(
     _: bool = Depends(verify_access)
 ):
     """GET endpoint for chart calculation with natal and transit data"""
+    # Auto-detect timezone from coordinates if not provided
+    auto_tz = tz or get_timezone_from_coordinates(lat, lon)
+    
     # Use specific parameters if provided, otherwise fall back to general ones
     natal_ayan = natal_ayanamsha if natal_ayanamsha else ayanamsha
     natal_house = natal_house_system if natal_house_system else house_system
@@ -2438,7 +2441,7 @@ async def calculate_chart_get(
     
     result = await build_natal_transit_response(
         year, month, day, hour, minute, second,
-        lat, lon, tz, natal_ayan, natal_house, transit_ayan, transit_house
+        lat, lon, auto_tz, natal_ayan, natal_house, transit_ayan, transit_house
     )
     return JSONResponse(content=result)
 
@@ -2449,6 +2452,9 @@ async def calculate_chart_post(
     _: bool = Depends(verify_access)
 ):
     """POST endpoint for chart calculation with natal and transit data"""
+    # Auto-detect timezone from coordinates if not provided
+    auto_tz = chart_data.tz or get_timezone_from_coordinates(chart_data.lat, chart_data.lon)
+    
     # Use specific parameters if provided, otherwise fall back to general ones
     natal_ayan = chart_data.natal_ayanamsha if chart_data.natal_ayanamsha else chart_data.ayanamsha
     natal_house = chart_data.natal_house_system if chart_data.natal_house_system else chart_data.house_system
@@ -2459,7 +2465,7 @@ async def calculate_chart_post(
         chart_data.year, chart_data.month, chart_data.day, 
         chart_data.hour, chart_data.minute, chart_data.second,
         chart_data.lat, chart_data.lon, 
-        chart_data.tz, natal_ayan, natal_house, transit_ayan, transit_house
+        auto_tz, natal_ayan, natal_house, transit_ayan, transit_house
     )
     return JSONResponse(content=result)
 

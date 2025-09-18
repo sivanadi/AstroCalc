@@ -388,27 +388,6 @@
                         <small>Positive for East, Negative for West</small>
                     </div>
                     
-                    <div class="form-group">
-                        <label for="timezone">Timezone:</label>
-                        <select id="timezone" name="timezone">
-                            <option value="UTC">UTC</option>
-                            <option value="Asia/Kolkata">Asia/Kolkata (IST +5:30)</option>
-                            <option value="America/New_York">America/New_York (EST/EDT -5/-4)</option>
-                            <option value="America/Los_Angeles">America/Los_Angeles (PST/PDT -8/-7)</option>
-                            <option value="America/Chicago">America/Chicago (CST/CDT -6/-5)</option>
-                            <option value="America/Denver">America/Denver (MST/MDT -7/-6)</option>
-                            <option value="Europe/London">Europe/London (GMT/BST +0/+1)</option>
-                            <option value="Europe/Paris">Europe/Paris (CET/CEST +1/+2)</option>
-                            <option value="Europe/Berlin">Europe/Berlin (CET/CEST +1/+2)</option>
-                            <option value="Asia/Tokyo">Asia/Tokyo (JST +9)</option>
-                            <option value="Asia/Shanghai">Asia/Shanghai (CST +8)</option>
-                            <option value="Asia/Dubai">Asia/Dubai (GST +4)</option>
-                            <option value="Asia/Singapore">Asia/Singapore (SGT +8)</option>
-                            <option value="Australia/Sydney">Australia/Sydney (AEST/AEDT +10/+11)</option>
-                            <option value="Australia/Melbourne">Australia/Melbourne (AEST/AEDT +10/+11)</option>
-                            <option value="Pacific/Auckland">Pacific/Auckland (NZST/NZDT +12/+13)</option>
-                        </select>
-                    </div>
                     
                     <div class="form-group">
                         <label for="ayanamsha">Ayanamsha:</label>
@@ -531,7 +510,6 @@
                 second: parseInt(data.second),
                 lat: parseFloat(data.lat),
                 lon: parseFloat(data.lon),
-                tz: data.timezone,
                 ayanamsha: data.ayanamsha,
                 house_system: data.house_system
             };
@@ -569,7 +547,6 @@
                     second: requestData.second,
                     lat: requestData.lat,
                     lon: requestData.lon,
-                    tz: requestData.tz,
                     ayanamsha: requestData.ayanamsha,
                     house_system: requestData.house_system
                 });
