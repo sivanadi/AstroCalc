@@ -642,10 +642,16 @@
                         return;
                     }
                     
-                    // Display the newly created API key prominently
-                    const apiKeysList = document.getElementById('apiKeysList');
+                    // Display the newly created API key prominently - ADD TO PARENT SECTION NOT THE LIST
+                    const apiKeysSection = document.querySelector('.section:has(#apiKeysList)') || document.getElementById('apiKeysList').closest('.section');
+                    
+                    // Clear any existing new key alerts first
+                    const existingAlerts = document.querySelectorAll('[data-new-key-alert]');
+                    existingAlerts.forEach(alert => alert.remove());
+                    
                     const newKeyAlert = document.createElement('div');
-                    newKeyAlert.style.cssText = 'background: #d4edda; border: 1px solid #c3e6cb; border-radius: 8px; padding: 20px; margin: 20px 0; border-left: 4px solid #28a745;';
+                    newKeyAlert.setAttribute('data-new-key-alert', 'true');
+                    newKeyAlert.style.cssText = 'background: #d4edda; border: 1px solid #c3e6cb; border-radius: 8px; padding: 20px; margin: 20px 0; border-left: 4px solid #28a745; position: relative; z-index: 100;';
                     
                     const alertTitle = document.createElement('h4');
                     alertTitle.style.cssText = 'margin: 0 0 15px 0; color: #155724;';
@@ -707,21 +713,25 @@
                     newKeyAlert.appendChild(copyBtn);
                     newKeyAlert.appendChild(dismissBtn);
                     
-                    // Insert at the top of the API keys section
-                    apiKeysList.insertBefore(newKeyAlert, apiKeysList.firstChild);
-                    
-                    // Clear the form
+                    // Clear the form first
                     document.getElementById('keyName').value = '';
                     document.getElementById('keyDesc').value = '';
                     document.getElementById('keyPerMinute').value = '60';
                     document.getElementById('keyPerDay').value = '1000';
                     document.getElementById('keyPerMonth').value = '30000';
                     
-                    // Reload the keys list
-                    loadApiKeys();
+                    // Insert the popup into the section (BEFORE loadApiKeys clears the list)
+                    const apiKeysList = document.getElementById('apiKeysList');
+                    apiKeysSection.insertBefore(newKeyAlert, apiKeysList);
                     
-                    // Scroll to the new key alert
-                    newKeyAlert.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    // Reload the keys list AFTER popup is safely placed
+                    await loadApiKeys();
+                    
+                    // Scroll to the new key alert and ensure it's visible
+                    setTimeout(() => {
+                        newKeyAlert.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        console.log('Popup should be visible now!'); // Debug log
+                    }, 100);
                 } else {
                     // Handle non-200 responses
                     const errorData = await response.json().catch(() => ({ detail: 'Unknown error' }));
