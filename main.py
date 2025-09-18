@@ -3405,6 +3405,11 @@ async def health_check():
     """Health check endpoint"""
     return {"status": "healthy", "ephe_path": ephe_path}
 
+@app.api_route("/api", methods=["GET", "HEAD"])
+async def api_health_check():
+    """API health check endpoint for monitoring systems (handles both GET and HEAD)"""
+    return {"status": "ok", "api": "vedic-astrology-calculator", "version": "1.0"}
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=5000)
