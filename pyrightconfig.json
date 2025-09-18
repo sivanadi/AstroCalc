@@ -1,0 +1,16 @@
+{
+  "venvPath": ".",
+  "venv": ".pythonlibs",
+  "extraPaths": [
+    ".pythonlibs/lib/python3.11/site-packages"
+  ],
+  "pythonPath": ".pythonlibs/bin/python",
+  "include": [
+    "**/*.py"
+  ],
+  "exclude": [
+    "**/node_modules",
+    "**/__pycache__",
+    ".git"
+  ]
+}
