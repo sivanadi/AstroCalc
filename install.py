@@ -39,8 +39,14 @@ class UniversalInstaller:
             return os.getuid() == 0
         except AttributeError:
             # Windows
-            import ctypes
-            return ctypes.windll.shell32.IsUserAnAdmin() != 0
+            try:
+                import ctypes
+                # Windows-specific check
+                if hasattr(ctypes, 'windll'):
+                    return bool(ctypes.windll.shell32.IsUserAnAdmin())  # type: ignore
+                return False
+            except (ImportError, AttributeError):
+                return False
     
     def _detect_container_environment(self) -> bool:
         """Detect if running inside a container"""
@@ -90,7 +96,8 @@ class UniversalInstaller:
             print(f"Error: {e.stderr}")
             if check:
                 raise
-            return e
+            # Return a CompletedProcess object for consistency
+            return subprocess.CompletedProcess(command, e.returncode, e.stdout, e.stderr)
     
     def _download_file(self, url: str, destination: Path) -> None:
         """Download file with progress indicator"""
@@ -274,7 +281,7 @@ class UniversalInstaller:
             import tomllib
         except ImportError:
             try:
-                import tomli as tomllib
+                import tomli as tomllib  # type: ignore
             except ImportError:
                 # Fallback - return known dependencies
                 return [
