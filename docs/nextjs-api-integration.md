@@ -282,7 +282,288 @@ interface CreateDomainRequest {
 
 ## Next.js Integration Patterns
 
-### 1. Server-Side Rendering (SSR) with API Routes
+### 1. Server Actions (Next.js 15 - Recommended for Forms)
+
+Server Actions provide a secure, server-side way to handle form submissions and mutations without creating separate API routes.
+
+#### Basic Server Action Implementation
+```typescript
+// actions/chart-actions.ts
+'use server'
+
+import { auth } from '@/auth' // Your auth method
+import { redirect } from 'next/navigation'
+import { revalidatePath } from 'next/cache'
+import { z } from 'zod'
+
+const ChartRequestSchema = z.object({
+  year: z.number().int().min(1).max(9999),
+  month: z.number().int().min(1).max(12),
+  day: z.number().int().min(1).max(31),
+  hour: z.number().int().min(0).max(23),
+  minute: z.number().int().min(0).max(59).default(0),
+  lat: z.number().min(-90).max(90),
+  lon: z.number().min(-180).max(180),
+  tz: z.string().default('UTC'),
+  ayanamsha: z.string().default('lahiri'),
+  house_system: z.string().default('placidus')
+})
+
+const API_BASE_URL = process.env.ASTROLOGY_API_URL
+const API_KEY = process.env.ASTROLOGY_API_KEY
+
+export async function calculateChartAction(prevState: any, formData: FormData) {
+  // 1. Environment configuration check
+  if (!API_BASE_URL || !API_KEY) {
+    console.error('API configuration missing: ASTROLOGY_API_URL and ASTROLOGY_API_KEY must be set')
+    return { 
+      success: false, 
+      error: 'API configuration error. Please contact support.' 
+    }
+  }
+
+  // 2. Authentication check (if required)
+  const session = await auth?.() // Uncomment if authentication needed
+  // if (!session?.user) {
+  //   return { success: false, error: 'Authentication required' }
+  // }
+
+  // 3. Input validation
+  const rawData = {
+    year: parseInt(formData.get('year') as string),
+    month: parseInt(formData.get('month') as string),
+    day: parseInt(formData.get('day') as string),
+    hour: parseInt(formData.get('hour') as string),
+    minute: parseInt(formData.get('minute') as string) || 0,
+    lat: parseFloat(formData.get('lat') as string),
+    lon: parseFloat(formData.get('lon') as string),
+    tz: formData.get('tz') as string || 'UTC',
+    ayanamsha: formData.get('ayanamsha') as string || 'lahiri',
+    house_system: formData.get('house_system') as string || 'placidus'
+  }
+
+  let validatedData
+  try {
+    validatedData = ChartRequestSchema.parse(rawData)
+  } catch (error) {
+    return { 
+      success: false, 
+      error: `Invalid form data: ${error instanceof Error ? error.message : 'Validation failed'}` 
+    }
+  }
+
+  // 4. API call to astrology service
+  try {
+    const response = await fetch(`${API_BASE_URL}/chart`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${API_KEY}`
+      },
+      body: JSON.stringify(validatedData)
+    })
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ detail: 'API request failed' }))
+      return { 
+        success: false, 
+        error: error.detail || `HTTP ${response.status}: Chart calculation failed` 
+      }
+    }
+
+    const chartData = await response.json()
+    
+    // 5. Optionally save to database
+    // await saveChartToDatabase(chartData, session?.user?.id)
+    
+    // 6. Revalidate cached data if needed
+    revalidatePath('/charts')
+    
+    return { success: true, data: chartData }
+  } catch (error) {
+    console.error('Chart calculation error:', error)
+    return { 
+      success: false, 
+      error: 'Failed to calculate chart. Please check your connection and try again.' 
+    }
+  }
+}
+
+export async function saveChartAction(prevState: any, formData: FormData) {
+  const session = await auth?.()
+  if (!session?.user?.id) {
+    return { 
+      success: false, 
+      error: 'Authentication required to save charts' 
+    }
+  }
+
+  try {
+    const chartDataString = formData.get('chartData') as string
+    const name = formData.get('name') as string
+
+    if (!chartDataString || !name) {
+      return { 
+        success: false, 
+        error: 'Chart data and name are required' 
+      }
+    }
+
+    const chartData = JSON.parse(chartDataString)
+
+    // Save chart to database with user association
+    // await db.chart.create({
+    //   data: {
+    //     name,
+    //     data: chartData,
+    //     userId: session.user.id
+    //   }
+    // })
+
+    revalidatePath('/my-charts')
+    return { success: true, message: 'Chart saved successfully' }
+  } catch (error) {
+    console.error('Save chart error:', error)
+    return { 
+      success: false, 
+      error: 'Failed to save chart. Please try again.' 
+    }
+  }
+}
+```
+
+#### Using Server Actions in Components
+```typescript
+// components/ChartForm.tsx
+'use client'
+
+import { calculateChartAction } from '@/actions/chart-actions'
+import { useFormStatus } from 'react-dom'
+import { useActionState } from 'react'
+
+function SubmitButton() {
+  const { pending } = useFormStatus()
+  
+  return (
+    <button 
+      type="submit" 
+      disabled={pending}
+      className="bg-blue-600 text-white px-4 py-2 rounded disabled:opacity-50"
+    >
+      {pending ? 'Calculating...' : 'Calculate Chart'}
+    </button>
+  )
+}
+
+export function ChartForm() {
+  const [state, formAction] = useActionState(calculateChartAction, null)
+
+  return (
+    <form action={formAction} className="space-y-4">
+      <div className="grid grid-cols-2 gap-4">
+        <input
+          name="year"
+          type="number"
+          placeholder="Year"
+          required
+          className="px-3 py-2 border rounded"
+        />
+        <input
+          name="month"
+          type="number"
+          placeholder="Month (1-12)"
+          min="1"
+          max="12"
+          required
+          className="px-3 py-2 border rounded"
+        />
+      </div>
+      
+      <div className="grid grid-cols-3 gap-4">
+        <input
+          name="day"
+          type="number"
+          placeholder="Day"
+          min="1"
+          max="31"
+          required
+          className="px-3 py-2 border rounded"
+        />
+        <input
+          name="hour"
+          type="number"
+          placeholder="Hour (0-23)"
+          min="0"
+          max="23"
+          required
+          className="px-3 py-2 border rounded"
+        />
+        <input
+          name="minute"
+          type="number"
+          placeholder="Minute (0-59)"
+          min="0"
+          max="59"
+          defaultValue="0"
+          className="px-3 py-2 border rounded"
+        />
+      </div>
+
+      <div className="grid grid-cols-2 gap-4">
+        <input
+          name="lat"
+          type="number"
+          step="any"
+          placeholder="Latitude"
+          required
+          className="px-3 py-2 border rounded"
+        />
+        <input
+          name="lon"
+          type="number"
+          step="any"
+          placeholder="Longitude"
+          required
+          className="px-3 py-2 border rounded"
+        />
+      </div>
+
+      <select
+        name="tz"
+        defaultValue="UTC"
+        className="w-full px-3 py-2 border rounded"
+      >
+        <option value="UTC">UTC</option>
+        <option value="Asia/Kolkata">Asia/Kolkata</option>
+        <option value="America/New_York">America/New_York</option>
+        <option value="Europe/London">Europe/London</option>
+      </select>
+
+      <SubmitButton />
+
+      {state?.success && (
+        <div className="mt-4 p-4 bg-green-100 border border-green-400 text-green-700 rounded">
+          Chart calculated successfully!
+          {state.data && (
+            <div className="mt-2">
+              <p>Date: {state.data.other_details?.natal_date_formatted}</p>
+              <p>Ayanamsha: {state.data.other_details?.natal_ayanamsha_name}</p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {state?.success === false && state?.error && (
+        <div className="mt-4 p-4 bg-red-100 border border-red-400 text-red-700 rounded">
+          Error: {state.error}
+        </div>
+      )}
+    </form>
+  )
+}
+```
+
+### 2. Server-Side Rendering (SSR) with API Routes
 
 #### pages/api/chart.ts (Pages Router)
 ```typescript
@@ -296,7 +577,15 @@ export default async function handler(
   res: NextApiResponse
 ) {
   if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method not allowed' });
+    return res.status(405).json({ detail: 'Method not allowed' });
+  }
+
+  // Environment configuration check
+  if (!API_BASE_URL || !API_KEY) {
+    console.error('API configuration missing: ASTROLOGY_API_URL and ASTROLOGY_API_KEY must be set');
+    return res.status(500).json({ 
+      detail: 'API configuration error. ASTROLOGY_API_URL and ASTROLOGY_API_KEY environment variables must be configured.' 
+    });
   }
 
   try {
@@ -310,15 +599,15 @@ export default async function handler(
     });
 
     if (!response.ok) {
-      const error = await response.json();
-      return res.status(response.status).json(error);
+      const error = await response.json().catch(() => ({ detail: 'API request failed' }));
+      return res.status(response.status).json({ detail: error.detail || `HTTP ${response.status}: Request failed` });
     }
 
     const data = await response.json();
     res.status(200).json(data);
   } catch (error) {
     console.error('API Error:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    res.status(500).json({ detail: 'Internal server error' });
   }
 }
 ```
@@ -331,6 +620,15 @@ const API_BASE_URL = process.env.ASTROLOGY_API_URL;
 const API_KEY = process.env.ASTROLOGY_API_KEY;
 
 export async function POST(request: NextRequest) {
+  // Environment configuration check
+  if (!API_BASE_URL || !API_KEY) {
+    console.error('API configuration missing: ASTROLOGY_API_URL and ASTROLOGY_API_KEY must be set');
+    return NextResponse.json(
+      { detail: 'API configuration error. ASTROLOGY_API_URL and ASTROLOGY_API_KEY environment variables must be configured.' },
+      { status: 500 }
+    );
+  }
+
   try {
     const body = await request.json();
     
@@ -344,8 +642,11 @@ export async function POST(request: NextRequest) {
     });
 
     if (!response.ok) {
-      const error = await response.json();
-      return NextResponse.json(error, { status: response.status });
+      const error = await response.json().catch(() => ({ detail: 'API request failed' }));
+      return NextResponse.json(
+        { detail: error.detail || `HTTP ${response.status}: Request failed` },
+        { status: response.status }
+      );
     }
 
     const data = await response.json();
@@ -353,14 +654,14 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error('API Error:', error);
     return NextResponse.json(
-      { error: 'Internal server error' },
+      { detail: 'Internal server error' },
       { status: 500 }
     );
   }
 }
 ```
 
-### 2. Client-Side Integration
+### 3. Client-Side Integration
 
 #### React Hook for Chart Calculation
 ```typescript
@@ -393,7 +694,7 @@ export const useChartCalculation = (): UseChartCalculation => {
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
+        const errorData = await response.json().catch(() => ({ detail: 'Request failed' }));
         throw new Error(errorData.detail || 'Failed to calculate chart');
       }
 
@@ -606,18 +907,29 @@ export default function ChartCalculator() {
 }
 ```
 
-### 3. Server Component Integration (App Router)
+### 4. Server Component Integration (App Router)
 
 ```typescript
 // app/chart/[id]/page.tsx
 import { ChartDisplay } from '@/components/ChartDisplay';
+import { notFound } from 'next/navigation';
+import { cache } from 'react';
 
-async function getChartData(chartId: string) {
+// Cache the chart data function to avoid duplicate requests
+const getChartData = cache(async (chartId: string) => {
   const API_BASE_URL = process.env.ASTROLOGY_API_URL;
   const API_KEY = process.env.ASTROLOGY_API_KEY;
 
+  if (!API_BASE_URL || !API_KEY) {
+    throw new Error('API configuration missing');
+  }
+
   // Example: Get saved chart data and calculate
   const chartParams = await getSavedChartParams(chartId);
+  
+  if (!chartParams) {
+    notFound();
+  }
   
   const response = await fetch(`${API_BASE_URL}/chart`, {
     method: 'POST',
@@ -626,16 +938,20 @@ async function getChartData(chartId: string) {
       'Authorization': `Bearer ${API_KEY}`
     },
     body: JSON.stringify(chartParams),
-    // Optional: Add caching
-    next: { revalidate: 3600 } // Cache for 1 hour
+    // Modern caching strategy
+    next: { 
+      revalidate: 3600, // Cache for 1 hour
+      tags: [`chart-${chartId}`] // Enable selective revalidation
+    }
   });
 
   if (!response.ok) {
-    throw new Error('Failed to fetch chart data');
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.detail || `HTTP ${response.status}: Failed to fetch chart data`);
   }
 
   return response.json();
-}
+});
 
 export default async function ChartPage({ params }: { params: { id: string } }) {
   const chartData = await getChartData(params.id);
@@ -646,6 +962,307 @@ export default async function ChartPage({ params }: { params: { id: string } }) 
       <ChartDisplay data={chartData} />
     </div>
   );
+}
+
+// Generate metadata for SEO
+export async function generateMetadata({ params }: { params: { id: string } }) {
+  try {
+    const chartData = await getChartData(params.id);
+    
+    return {
+      title: `Vedic Chart Analysis - ${chartData.other_details?.natal_date_formatted || 'Unknown Date'}`,
+      description: `Detailed Vedic astrology chart analysis using ${chartData.other_details?.natal_ayanamsha_name || 'Lahiri'} ayanamsha`
+    };
+  } catch (error) {
+    return {
+      title: 'Vedic Chart Analysis',
+      description: 'Professional Vedic astrology chart analysis'
+    };
+  }
+}
+```
+
+### 5. Advanced Caching and Performance Optimization (Next.js 15)
+
+#### Intelligent Cache Management
+```typescript
+// lib/cache-manager.ts
+import { revalidateTag } from 'next/cache';
+import { cache } from 'react';
+
+export class ChartCacheManager {
+  static async invalidateUserCharts(userId: string) {
+    revalidateTag(`user-charts-${userId}`);
+  }
+  
+  static async invalidateChart(chartId: string) {
+    revalidateTag(`chart-${chartId}`);
+  }
+  
+  static async invalidateAyanamshaData() {
+    revalidateTag('ayanamsha-options');
+  }
+}
+
+// Enhanced data fetcher with cache tags and environment guards
+export const fetchWithCache = cache(async (
+  url: string, 
+  options: RequestInit = {},
+  cacheConfig: { revalidate?: number; tags?: string[] } = {}
+) => {
+  const API_BASE_URL = process.env.ASTROLOGY_API_URL;
+  const API_KEY = process.env.ASTROLOGY_API_KEY;
+  
+  if (!API_BASE_URL || !API_KEY) {
+    throw new Error('ASTROLOGY_API_URL and ASTROLOGY_API_KEY environment variables must be configured');
+  }
+  
+  const response = await fetch(`${API_BASE_URL}${url}`, {
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${API_KEY}`,
+      ...options.headers
+    },
+    next: {
+      revalidate: cacheConfig.revalidate || 3600,
+      tags: cacheConfig.tags || []
+    }
+  });
+  
+  if (!response.ok) {
+    throw new Error(`API request failed: ${response.status} - ${response.statusText}`);
+  }
+  
+  return response.json();
+});
+
+// Usage in Server Components
+export async function getAyanamshaOptions() {
+  return fetchWithCache('/ayanamsha-options', {}, {
+    revalidate: 7 * 24 * 60 * 60, // 7 days
+    tags: ['ayanamsha-options']
+  });
+}
+
+// Note: This would be for a user-specific charts endpoint if your API supports it
+// Currently the Vedic Astrology API doesn't have user management, so this is a placeholder
+export async function getUserCharts() {
+  // This would typically require authentication and a user-specific endpoint
+  // Since the current API doesn't have user management, this is a conceptual example
+  throw new Error('User charts endpoint not implemented in current API');
+}
+```
+
+#### Streaming and Suspense Patterns
+```typescript
+// app/dashboard/page.tsx
+import { Suspense } from 'react';
+import { UserCharts } from '@/components/UserCharts';
+import { RecentActivity } from '@/components/RecentActivity';
+import { ChartsSkeleton, ActivitySkeleton } from '@/components/Skeletons';
+
+export default function DashboardPage() {
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <Suspense fallback={<ChartsSkeleton />}>
+        <UserCharts />
+      </Suspense>
+      
+      <Suspense fallback={<ActivitySkeleton />}>
+        <RecentActivity />
+      </Suspense>
+    </div>
+  );
+}
+
+// components/UserCharts.tsx
+async function UserCharts() {
+  // Since the current API doesn't have user management, 
+  // this would typically fetch from your own database of saved charts
+  try {
+    // Example: const charts = await db.charts.findMany({ where: { userId } });
+    const mockCharts = []; // Replace with actual database query
+    
+    return (
+      <div>
+        <h2>Your Charts</h2>
+        {mockCharts.length > 0 ? (
+          mockCharts.map(chart => (
+            <ChartCard key={chart.id} chart={chart} />
+          ))
+        ) : (
+          <p>No saved charts yet. Calculate your first chart!</p>
+        )}
+      </div>
+    );
+  } catch (error) {
+    console.error('Failed to load charts:', error);
+    return (
+      <div>
+        <h2>Your Charts</h2>
+        <p>Unable to load charts. Please try again later.</p>
+      </div>
+    );
+  }
+}
+```
+
+### 6. Enhanced Security Patterns (2024)
+
+#### CSRF Protection for Server Actions
+```typescript
+// next.config.js
+/** @type {import('next').NextConfig} */
+const nextConfig = {
+  experimental: {
+    serverActions: {
+      // Enable CSRF protection
+      allowedOrigins: [
+        'localhost:3000',
+        'yourdomain.com',
+        'www.yourdomain.com'
+      ]
+    }
+  }
+}
+
+module.exports = nextConfig
+```
+
+#### Rate Limiting for API Routes
+```typescript
+// lib/rate-limiter.ts
+import { NextRequest } from 'next/server';
+
+interface RateLimitConfig {
+  requests: number;
+  window: number; // in seconds
+}
+
+class RateLimiter {
+  private cache = new Map<string, { count: number; resetTime: number }>();
+
+  async check(request: NextRequest, config: RateLimitConfig): Promise<boolean> {
+    const identifier = this.getIdentifier(request);
+    const now = Date.now();
+    
+    const record = this.cache.get(identifier);
+    
+    if (!record || now > record.resetTime) {
+      this.cache.set(identifier, {
+        count: 1,
+        resetTime: now + (config.window * 1000)
+      });
+      return true;
+    }
+    
+    if (record.count >= config.requests) {
+      return false; // Rate limited
+    }
+    
+    record.count++;
+    return true;
+  }
+  
+  private getIdentifier(request: NextRequest): string {
+    // Use IP address or authenticated user ID
+    const forwarded = request.headers.get('x-forwarded-for');
+    const ip = forwarded ? forwarded.split(',')[0] : request.ip;
+    return ip || 'unknown';
+  }
+}
+
+export const rateLimiter = new RateLimiter();
+
+// Usage in API routes
+export async function POST(request: NextRequest) {
+  const isAllowed = await rateLimiter.check(request, {
+    requests: 10, // 10 requests
+    window: 60    // per minute
+  });
+  
+  if (!isAllowed) {
+    return NextResponse.json(
+      { error: 'Rate limit exceeded' },
+      { status: 429 }
+    );
+  }
+  
+  // Continue with request processing...
+}
+```
+
+#### Input Sanitization and Validation
+```typescript
+// lib/validation.ts
+import { z } from 'zod';
+import DOMPurify from 'isomorphic-dompurify';
+
+export const sanitizeInput = (input: string): string => {
+  return DOMPurify.sanitize(input, { 
+    ALLOWED_TAGS: [], 
+    ALLOWED_ATTR: [] 
+  });
+};
+
+export const ChartRequestSchema = z.object({
+  year: z.number().int().min(1).max(9999),
+  month: z.number().int().min(1).max(12),
+  day: z.number().int().min(1).max(31),
+  hour: z.number().int().min(0).max(23),
+  minute: z.number().int().min(0).max(59).default(0),
+  second: z.number().int().min(0).max(59).default(0),
+  lat: z.number().min(-90).max(90),
+  lon: z.number().min(-180).max(180),
+  tz: z.string().min(1).max(50).refine(
+    (tz) => {
+      // Validate timezone string
+      try {
+        Intl.DateTimeFormat(undefined, { timeZone: tz });
+        return true;
+      } catch {
+        return false;
+      }
+    },
+    { message: 'Invalid timezone' }
+  ),
+  ayanamsha: z.string().min(1).max(50),
+  house_system: z.string().min(1).max(20),
+  // Optional fields with validation
+  natal_ayanamsha: z.string().min(1).max(50).optional(),
+  natal_house_system: z.string().min(1).max(20).optional(),
+  transit_ayanamsha: z.string().min(1).max(50).optional(),
+  transit_house_system: z.string().min(1).max(20).optional()
+}).refine((data) => {
+  // Validate date is not in the future beyond reasonable limits
+  const inputDate = new Date(data.year, data.month - 1, data.day);
+  const maxFutureDate = new Date();
+  maxFutureDate.setFullYear(maxFutureDate.getFullYear() + 100);
+  
+  return inputDate <= maxFutureDate;
+}, { message: 'Date cannot be more than 100 years in the future' });
+
+// Sanitize and validate function
+export function sanitizeAndValidateChartRequest(rawData: unknown): z.infer<typeof ChartRequestSchema> {
+  // First sanitize string inputs if they exist
+  if (typeof rawData === 'object' && rawData !== null) {
+    const sanitized = { ...rawData as any };
+    
+    if (typeof sanitized.tz === 'string') {
+      sanitized.tz = sanitizeInput(sanitized.tz);
+    }
+    if (typeof sanitized.ayanamsha === 'string') {
+      sanitized.ayanamsha = sanitizeInput(sanitized.ayanamsha);
+    }
+    if (typeof sanitized.house_system === 'string') {
+      sanitized.house_system = sanitizeInput(sanitized.house_system);
+    }
+    
+    return ChartRequestSchema.parse(sanitized);
+  }
+  
+  return ChartRequestSchema.parse(rawData);
 }
 ```
 
@@ -1126,14 +1743,175 @@ debugLog('API Response', {
 
 ---
 
+## Environment Setup
+
+### Required Environment Variables
+
+Before using any of the integration patterns, you must configure these environment variables:
+
+```bash
+# .env.local (for development) or deployment environment
+ASTROLOGY_API_URL=https://your-api-domain.com
+ASTROLOGY_API_KEY=your_secure_api_key_here
+```
+
+⚠️ **Critical**: All code examples in this guide will fail with silent errors if these variables are not set. The enhanced examples include proper error handling to detect missing configuration.
+
+### Getting Your API Key
+
+1. **Contact the API administrator** to get your API key
+2. **Set your domain authorization** (if using client-side requests)
+3. **Configure rate limits** appropriate for your application's needs
+
+### Testing Your Configuration
+
+```typescript
+// lib/config-test.ts
+export function validateAPIConfig() {
+  const apiUrl = process.env.ASTROLOGY_API_URL;
+  const apiKey = process.env.ASTROLOGY_API_KEY;
+  
+  if (!apiUrl) {
+    throw new Error('ASTROLOGY_API_URL environment variable is required');
+  }
+  
+  if (!apiKey) {
+    throw new Error('ASTROLOGY_API_KEY environment variable is required');
+  }
+  
+  console.log('✅ API configuration is valid');
+  return { apiUrl, apiKey };
+}
+
+// Call this in your application startup
+try {
+  validateAPIConfig();
+} catch (error) {
+  console.error('❌ API Configuration Error:', error.message);
+  process.exit(1);
+}
+```
+
+## Production Deployment Checklist
+
+### Environment Configuration
+```bash
+# Required environment variables for production
+ASTROLOGY_API_URL=https://your-api-domain.com
+ASTROLOGY_API_KEY=your_secure_api_key_here
+
+# Optional configuration
+NODE_ENV=production
+NEXT_TELEMETRY_DISABLED=1
+
+# For authentication (if using NextAuth.js)
+NEXTAUTH_URL=https://your-nextjs-app.com
+NEXTAUTH_SECRET=your_nextauth_secret_here
+```
+
+### Next.js 15 Production Configuration
+```typescript
+// next.config.js
+/** @type {import('next').NextConfig} */
+const nextConfig = {
+  // Security enhancements
+  experimental: {
+    serverActions: {
+      allowedOrigins: [
+        process.env.NEXTAUTH_URL,
+        'yourdomain.com'
+      ]
+    }
+  },
+  
+  // Performance optimizations
+  images: {
+    formats: ['image/webp', 'image/avif'],
+  },
+  
+  // Security headers
+  async headers() {
+    return [
+      {
+        source: '/(.*)',
+        headers: [
+          {
+            key: 'X-Frame-Options',
+            value: 'DENY'
+          },
+          {
+            key: 'X-Content-Type-Options',
+            value: 'nosniff'
+          },
+          {
+            key: 'Referrer-Policy',
+            value: 'strict-origin-when-cross-origin'
+          }
+        ]
+      }
+    ];
+  }
+}
+
+module.exports = nextConfig
+```
+
+### Performance Monitoring
+```typescript
+// lib/analytics.ts
+export function trackChartCalculation(duration: number, ayanamsha: string) {
+  if (typeof window !== 'undefined' && window.gtag) {
+    window.gtag('event', 'chart_calculated', {
+      event_category: 'astrology',
+      event_label: ayanamsha,
+      value: Math.round(duration)
+    });
+  }
+}
+
+export function trackAPIError(endpoint: string, errorCode: number) {
+  if (typeof window !== 'undefined' && window.gtag) {
+    window.gtag('event', 'api_error', {
+      event_category: 'api',
+      event_label: endpoint,
+      value: errorCode
+    });
+  }
+}
+```
+
 ## Conclusion
 
-This guide provides comprehensive patterns for integrating the Vedic Astrology Calculator API with Next.js applications. Choose the appropriate authentication method and integration pattern based on your specific use case:
+This comprehensive guide provides modern patterns for integrating the Vedic Astrology Calculator API with Next.js 15 applications, incorporating the latest 2024 best practices:
 
-- **Server-side API routes**: For secure API key usage
-- **Client-side integration**: For public domain-authorized access
-- **Server components**: For SSR and better SEO
+### Key Integration Approaches:
+- **Server Actions** (Recommended): Modern form handling with built-in security
+- **Server Components**: Optimal performance and SEO with intelligent caching
+- **API Routes**: Traditional approach for custom authentication needs
+- **Client-side integration**: For interactive components with real-time updates
 
-Remember to implement proper error handling, respect rate limits, and follow security best practices when deploying to production.
+### Security Features:
+- ✅ CSRF protection for Server Actions
+- ✅ Input validation and sanitization
+- ✅ Rate limiting implementation
+- ✅ Secure environment variable handling
 
-For additional support or advanced usage patterns, refer to the API documentation or contact the development team.
+### Performance Optimizations:
+- ✅ Intelligent caching with cache tags
+- ✅ Streaming and Suspense patterns
+- ✅ Request deduplication with React cache
+- ✅ Selective revalidation strategies
+
+### Production Ready:
+- ✅ Comprehensive error handling
+- ✅ Type safety with Zod validation
+- ✅ Analytics and monitoring
+- ✅ Deployment best practices
+
+Choose the appropriate pattern based on your specific requirements:
+- **Public applications**: Use domain authorization with client-side integration
+- **Authenticated applications**: Use Server Actions with API key authentication
+- **High-performance needs**: Combine Server Components with intelligent caching
+- **Complex forms**: Leverage Server Actions with real-time validation
+
+For questions, advanced implementation guidance, or API support, refer to the main API documentation or contact the development team.
