@@ -8,6 +8,16 @@ This is a FastAPI web application that provides Vedic astrology calculations usi
 
 Preferred communication style: Simple, everyday language.
 
+## Recent Changes
+
+**September 18, 2025 - Successfully imported and configured for Replit environment:**
+- Installed all Python dependencies using uv package manager
+- Configured FastAPI server workflow to run on port 5000 with proper host configuration
+- Disabled API key enforcement for development and added Replit domain to authorized domains
+- Tested API endpoints and verified database initialization works correctly
+- Configured deployment settings for production using autoscale deployment target
+- Application is now fully functional in Replit environment with frontend and API working
+
 ## System Architecture
 
 ### Core Framework
