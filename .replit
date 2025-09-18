@@ -1,4 +1,4 @@
-modules = ["web", "python-3.11"]
+modules = ["python-3.11", "web", "bash"]
 [agent]
 expertMode = true
 
@@ -22,21 +22,17 @@ args = "FastAPI Server"
 name = "FastAPI Server"
 author = "agent"
 
-[[workflows.workflow.tasks]]
-task = "shell.exec"
-args = "uvicorn main:app --host 0.0.0.0 --port 5000 --reload"
-waitForPort = 5000
-
 [workflows.workflow.metadata]
 outputType = "webview"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "uv run uvicorn main:app --host 0.0.0.0 --port 5000 --reload"
+waitForPort = 5000
 
 [[ports]]
 localPort = 5000
 externalPort = 80
-
-[[ports]]
-localPort = 35991
-externalPort = 3000
 
 [deployment]
 deploymentTarget = "autoscale"
