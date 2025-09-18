@@ -280,6 +280,269 @@ interface CreateDomainRequest {
 }
 ```
 
+## Complete API Access Methods Guide
+
+### Method 1: GET Requests with Query Parameters
+
+Both server-side and client-side applications can use GET requests with URL parameters:
+
+```typescript
+// Server-side (with API Key)
+const buildChartURL = (params: ChartRequest) => {
+  const url = new URL(`${API_BASE_URL}/chart`);
+  Object.entries(params).forEach(([key, value]) => {
+    if (value !== undefined) url.searchParams.set(key, value.toString());
+  });
+  return url.toString();
+};
+
+// Usage in Server Component with API Key
+const chartData = await fetch(buildChartURL(chartParams), {
+  headers: {
+    'Authorization': `Bearer ${process.env.ASTROLOGY_API_KEY}`
+  }
+});
+
+// Client-side (Domain Authorized)
+const response = await fetch(buildChartURL(chartParams));
+const data = await response.json();
+```
+
+### Method 2: POST Requests with JSON Body
+
+For complex requests with structured data:
+
+```typescript
+// Server-side with API Key
+const response = await fetch(`${API_BASE_URL}/chart`, {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+    'Authorization': `Bearer ${API_KEY}`
+  },
+  body: JSON.stringify(chartData)
+});
+
+// Client-side (Domain Authorized)
+const response = await fetch(`${API_BASE_URL}/chart`, {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json'
+    // No Authorization header needed for domain-authorized requests
+  },
+  body: JSON.stringify(chartData)
+});
+```
+
+### Method 3: Domain Authorization (Client-Side Friendly)
+
+When your domain is pre-authorized by the API administrator, you can make direct client-side requests without API keys:
+
+#### Setting Up Domain Authorization
+
+1. **Contact API Administrator**: Request your domain to be added to the authorized domains list
+2. **Configure Rate Limits**: Set appropriate limits for your domain's usage
+3. **Verify Setup**: Test that requests from your domain work without API keys
+
+#### Client-Side Implementation
+
+```typescript
+// hooks/useAstrologyAPI.ts
+'use client'
+
+import { useState, useCallback } from 'react';
+
+interface DomainAuthorizedAPI {
+  calculateChart: (data: ChartRequest, method?: 'GET' | 'POST') => Promise<ChartResponse>;
+  getAyanamshaOptions: () => Promise<{ options: Record<string, { id: number; name: string }> }>;
+  checkHealth: () => Promise<{ status: string; ephe_path: string }>;
+}
+
+export const useAstrologyAPI = (): DomainAuthorizedAPI => {
+  const API_BASE_URL = process.env.NEXT_PUBLIC_ASTROLOGY_API_URL;
+
+  const calculateChart = useCallback(async (data: ChartRequest, method: 'GET' | 'POST' = 'POST'): Promise<ChartResponse> => {
+    if (!API_BASE_URL) {
+      throw new Error('NEXT_PUBLIC_ASTROLOGY_API_URL environment variable is required for client-side requests');
+    }
+
+    let response: Response;
+
+    if (method === 'GET') {
+      // GET with query parameters
+      const getUrl = new URL(`${API_BASE_URL}/chart`);
+      Object.entries(data).forEach(([key, value]) => {
+        if (value !== undefined) getUrl.searchParams.set(key, value.toString());
+      });
+      response = await fetch(getUrl.toString());
+    } else {
+      // POST with JSON body (default)
+      response = await fetch(`${API_BASE_URL}/chart`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(data)
+      });
+    }
+    
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ detail: 'Request failed' }));
+      throw new Error(error.detail || `HTTP ${response.status}: Request failed`);
+    }
+
+    return response.json();
+  }, [API_BASE_URL]);
+
+  const getAyanamshaOptions = useCallback(async (): Promise<{ options: Record<string, { id: number; name: string }> }> => {
+    if (!API_BASE_URL) {
+      throw new Error('NEXT_PUBLIC_ASTROLOGY_API_URL environment variable is required');
+    }
+
+    const response = await fetch(`${API_BASE_URL}/ayanamsha-options`);
+    
+    if (!response.ok) {
+      throw new Error(`Failed to fetch ayanamsha options: ${response.status}`);
+    }
+
+    return response.json();
+  }, [API_BASE_URL]);
+
+  const checkHealth = useCallback(async (): Promise<{ status: string; ephe_path: string }> => {
+    if (!API_BASE_URL) {
+      throw new Error('NEXT_PUBLIC_ASTROLOGY_API_URL environment variable is required');
+    }
+
+    const response = await fetch(`${API_BASE_URL}/health`);
+    
+    if (!response.ok) {
+      throw new Error(`Health check failed: ${response.status}`);
+    }
+
+    return response.json();
+  }, [API_BASE_URL]);
+
+  return {
+    calculateChart,
+    getAyanamshaOptions,
+    checkHealth
+  };
+};
+```
+
+#### Client Component Example
+
+```typescript
+// components/DomainAuthorizedChart.tsx
+'use client'
+
+import { useState } from 'react';
+import { useAstrologyAPI } from '@/hooks/useAstrologyAPI';
+
+export function DomainAuthorizedChart() {
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState<ChartResponse | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const { calculateChart } = useAstrologyAPI();
+
+  const handleCalculate = async (formData: FormData) => {
+    setLoading(true);
+    setError(null);
+
+    try {
+      const chartRequest: ChartRequest = {
+        year: parseInt(formData.get('year') as string),
+        month: parseInt(formData.get('month') as string),
+        day: parseInt(formData.get('day') as string),
+        hour: parseInt(formData.get('hour') as string),
+        minute: parseInt(formData.get('minute') as string) || 0,
+        lat: parseFloat(formData.get('lat') as string),
+        lon: parseFloat(formData.get('lon') as string),
+        tz: formData.get('tz') as string || 'UTC',
+        ayanamsha: formData.get('ayanamsha') as string || 'lahiri',
+        house_system: formData.get('house_system') as string || 'placidus'
+      };
+
+      const chartData = await calculateChart(chartRequest);
+      setResult(chartData);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unknown error occurred');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="p-6">
+      <h2 className="text-2xl font-bold mb-4">Domain Authorized Chart Calculator</h2>
+      
+      <form onSubmit={(e) => {
+        e.preventDefault();
+        const formData = new FormData(e.currentTarget);
+        handleCalculate(formData);
+      }} className="space-y-4">
+        {/* Form fields... */}
+        <div className="grid grid-cols-2 gap-4">
+          <input name="year" type="number" placeholder="Year" required />
+          <input name="month" type="number" placeholder="Month" min="1" max="12" required />
+        </div>
+        
+        <div className="grid grid-cols-3 gap-4">
+          <input name="day" type="number" placeholder="Day" min="1" max="31" required />
+          <input name="hour" type="number" placeholder="Hour" min="0" max="23" required />
+          <input name="minute" type="number" placeholder="Minute" min="0" max="59" defaultValue="0" />
+        </div>
+
+        <div className="grid grid-cols-2 gap-4">
+          <input name="lat" type="number" step="any" placeholder="Latitude" required />
+          <input name="lon" type="number" step="any" placeholder="Longitude" required />
+        </div>
+
+        <select name="tz" defaultValue="UTC">
+          <option value="UTC">UTC</option>
+          <option value="Asia/Kolkata">Asia/Kolkata</option>
+          <option value="America/New_York">America/New_York</option>
+        </select>
+
+        <button 
+          type="submit" 
+          disabled={loading}
+          className="bg-blue-600 text-white px-6 py-2 rounded disabled:opacity-50"
+        >
+          {loading ? 'Calculating...' : 'Calculate Chart (Domain Authorized)'}
+        </button>
+      </form>
+
+      {error && (
+        <div className="mt-4 p-4 bg-red-100 border border-red-400 text-red-700 rounded">
+          Error: {error}
+        </div>
+      )}
+
+      {result && (
+        <div className="mt-6">
+          <h3 className="text-lg font-semibold mb-4">Chart Results</h3>
+          <div className="bg-gray-100 p-4 rounded">
+            <p>Date: {result.other_details.natal_date_formatted}</p>
+            <p>Ayanamsha: {result.other_details.natal_ayanamsha_name}</p>
+            <div className="mt-4">
+              <h4 className="font-medium">Planetary Positions:</h4>
+              <div className="grid grid-cols-2 gap-2 mt-2">
+                {Object.entries(result.natal_planets).map(([planet, longitude]) => (
+                  <div key={planet}>
+                    <strong>{planet}:</strong> {longitude.toFixed(2)}°
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+```
+
 ## Next.js Integration Patterns
 
 ### 1. Server Actions (Next.js 15 - Recommended for Forms)
