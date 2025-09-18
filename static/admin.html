@@ -633,6 +633,14 @@
                 
                 if (response.ok) {
                     const data = await response.json();
+                    console.log('API Key Creation Response:', data); // Debug log
+                    
+                    // Check if API key exists in response
+                    if (!data.api_key) {
+                        console.error('No API key in response:', data);
+                        alert('Error: API key not returned from server');
+                        return;
+                    }
                     
                     // Display the newly created API key prominently
                     const apiKeysList = document.getElementById('apiKeysList');
@@ -714,9 +722,15 @@
                     
                     // Scroll to the new key alert
                     newKeyAlert.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                } else {
+                    // Handle non-200 responses
+                    const errorData = await response.json().catch(() => ({ detail: 'Unknown error' }));
+                    console.error('API Key creation failed:', response.status, errorData);
+                    alert(`Failed to create API key: ${errorData.detail || 'Unknown error'}`);
                 }
             } catch (error) {
-                console.error('Failed to create API key');
+                console.error('Failed to create API key:', error);
+                alert(`Error creating API key: ${error.message}`);
             }
         }
         
