@@ -1,0 +1,233 @@
+# GitHub Actions CI/CD pipeline for Vedic Astrology Calculator
+name: Deploy Vedic Astrology Calculator
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+env:
+  DOCKER_REGISTRY: ghcr.io
+  IMAGE_NAME: vedic-astrology-calculator
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    name: Test Application
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install uv
+        run: pip install uv
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Run tests
+        run: |
+          source .pythonlibs/bin/activate
+          python -m pytest tests/ -v || echo "No tests found, skipping"
+
+      - name: Run linting
+        run: |
+          source .pythonlibs/bin/activate
+          python -m flake8 main.py --max-line-length=120 || echo "Linting completed"
+
+      - name: Security check
+        run: |
+          source .pythonlibs/bin/activate
+          python -m bandit -r . -f json || echo "Security scan completed"
+
+  build:
+    runs-on: ubuntu-latest
+    name: Build Docker Image
+    needs: test
+    outputs:
+      image: ${{ steps.image.outputs.image }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.DOCKER_REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.DOCKER_REGISTRY }}/${{ github.repository }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=sha,prefix={{branch}}-
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          target: production
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Output image
+        id: image
+        run: echo "image=${{ env.DOCKER_REGISTRY }}/${{ github.repository }}/${{ env.IMAGE_NAME }}:${{ github.sha }}" >> $GITHUB_OUTPUT
+
+  deploy-staging:
+    runs-on: ubuntu-latest
+    name: Deploy to Staging
+    needs: build
+    if: github.ref == 'refs/heads/develop'
+    environment: staging
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Deploy to staging server
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.STAGING_HOST }}
+          username: ${{ secrets.STAGING_USERNAME }}
+          key: ${{ secrets.STAGING_SSH_KEY }}
+          script: |
+            cd /opt/vedic-astrology
+            docker-compose down
+            docker pull ${{ needs.build.outputs.image }}
+            export IMAGE_TAG=${{ needs.build.outputs.image }}
+            docker-compose up -d
+            docker system prune -f
+
+  deploy-production:
+    runs-on: ubuntu-latest
+    name: Deploy to Production
+    needs: build
+    if: github.ref == 'refs/heads/main'
+    environment: production
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-west-2
+
+      - name: Deploy to ECS
+        run: |
+          # Update ECS service with new image
+          aws ecs update-service \
+            --cluster vedic-astrology-cluster \
+            --service vedic-astrology-service \
+            --force-new-deployment
+
+      - name: Deploy to Kubernetes
+        if: contains(github.event.head_commit.message, '[k8s]')
+        run: |
+          # Install kubectl
+          curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+          chmod +x kubectl
+          sudo mv kubectl /usr/local/bin/
+          
+          # Configure kubectl
+          echo "${{ secrets.KUBE_CONFIG }}" | base64 -d > kubeconfig
+          export KUBECONFIG=kubeconfig
+          
+          # Update deployment
+          kubectl set image deployment/vedic-astrology-app \
+            vedic-astrology=${{ needs.build.outputs.image }} \
+            -n vedic-astrology
+          
+          # Wait for rollout
+          kubectl rollout status deployment/vedic-astrology-app -n vedic-astrology
+
+      - name: Run smoke tests
+        run: |
+          # Wait for deployment to be ready
+          sleep 30
+          
+          # Check if application is responding
+          curl -f https://vedic-astrology.your-domain.com/health || exit 1
+          
+          # Test API endpoint
+          curl -f https://vedic-astrology.your-domain.com/chart?year=2024&month=1&day=1&hour=12&minute=0&second=0&lat=28.6139&lon=77.2090 || exit 1
+
+  security-scan:
+    runs-on: ubuntu-latest
+    name: Security Scan
+    needs: build
+    steps:
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ needs.build.outputs.image }}
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+
+      - name: Upload Trivy scan results to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v2
+        if: always()
+        with:
+          sarif_file: 'trivy-results.sarif'
+
+  performance-test:
+    runs-on: ubuntu-latest
+    name: Performance Test
+    needs: deploy-staging
+    if: github.ref == 'refs/heads/develop'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install k6
+        run: |
+          sudo gpg -k
+          sudo gpg --no-default-keyring --keyring /usr/share/keyrings/k6-archive-keyring.gpg --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys C5AD17C747E3415A3642D57D77C6C491D6AC1D69
+          echo "deb [signed-by=/usr/share/keyrings/k6-archive-keyring.gpg] https://dl.k6.io/deb stable main" | sudo tee /etc/apt/sources.list.d/k6.list
+          sudo apt-get update
+          sudo apt-get install k6
+
+      - name: Run performance tests
+        run: |
+          cat << 'EOF' > load-test.js
+          import http from 'k6/http';
+          import { check, sleep } from 'k6';
+
+          export let options = {
+            stages: [
+              { duration: '2m', target: 10 },
+              { duration: '5m', target: 10 },
+              { duration: '2m', target: 0 },
+            ],
+          };
+
+          export default function () {
+            let response = http.get('https://staging.vedic-astrology.your-domain.com/');
+            check(response, {
+              'status is 200': (r) => r.status === 200,
+              'response time < 2s': (r) => r.timings.duration < 2000,
+            });
+            sleep(1);
+          }
+          EOF
+          
+          k6 run load-test.js

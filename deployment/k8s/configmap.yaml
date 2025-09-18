@@ -1,0 +1,58 @@
+# Kubernetes ConfigMap for Vedic Astrology Calculator
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vedic-astrology-config
+  namespace: vedic-astrology
+  labels:
+    app: vedic-astrology-calculator
+data:
+  # Application Configuration
+  ENVIRONMENT: "production"
+  PYTHONPATH: "/app"
+  HOST: "0.0.0.0"
+  PORT: "5000"
+  WORKERS: "1"
+  RELOAD: "false"
+  
+  # Database Configuration
+  DATABASE_URL: "sqlite:///data/astrology_db.sqlite3"
+  
+  # Session Configuration
+  SESSION_TIMEOUT: "3600"
+  
+  # CORS Configuration
+  CORS_ORIGINS: "https://vedic-astrology.your-domain.com"
+  AUTHORIZED_DOMAINS: "vedic-astrology.your-domain.com"
+  
+  # Logging Configuration
+  LOG_LEVEL: "INFO"
+  LOG_FORMAT: "json"
+  LOG_FILE: "/app/logs/app.log"
+  ACCESS_LOG: "/app/logs/access.log"
+  ERROR_LOG: "/app/logs/error.log"
+  
+  # Performance Configuration
+  KEEP_ALIVE_TIMEOUT: "5"
+  MAX_CONNECTIONS: "1000"
+  BACKLOG: "2048"
+  
+  # Rate Limiting
+  RATE_LIMIT_ENABLED: "true"
+  RATE_LIMIT_REQUESTS_PER_MINUTE: "60"
+  RATE_LIMIT_REQUESTS_PER_DAY: "1000"
+  
+  # Health Check
+  HEALTH_CHECK_ENABLED: "true"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ephemeris-data
+  namespace: vedic-astrology
+  labels:
+    app: vedic-astrology-calculator
+binaryData:
+  # This would contain the ephemeris data files
+  # In practice, you would load these from the actual files
+  # kubectl create configmap ephemeris-data --from-file=ephe/ -n vedic-astrology

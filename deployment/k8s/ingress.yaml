@@ -1,0 +1,38 @@
+# Kubernetes ingress for Vedic Astrology Calculator
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: vedic-astrology-ingress
+  namespace: vedic-astrology
+  labels:
+    app: vedic-astrology-calculator
+  annotations:
+    kubernetes.io/ingress.class: "nginx"
+    nginx.ingress.kubernetes.io/rewrite-target: /
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/use-regex: "true"
+    nginx.ingress.kubernetes.io/rate-limit-connections: "10"
+    nginx.ingress.kubernetes.io/rate-limit-rps: "10"
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    nginx.ingress.kubernetes.io/configuration-snippet: |
+      add_header X-Frame-Options "SAMEORIGIN";
+      add_header X-XSS-Protection "1; mode=block";
+      add_header X-Content-Type-Options "nosniff";
+      add_header Referrer-Policy "no-referrer-when-downgrade";
+      add_header Strict-Transport-Security "max-age=31536000; includeSubDomains";
+spec:
+  tls:
+  - hosts:
+    - vedic-astrology.your-domain.com
+    secretName: vedic-astrology-tls
+  rules:
+  - host: vedic-astrology.your-domain.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: vedic-astrology-service
+            port:
+              number: 80

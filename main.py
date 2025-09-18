@@ -491,7 +491,11 @@ def convert_julian_to_date(julian_day_ut, timezone_str='UTC'):
 
 def init_database():
     """Initialize SQLite database with required tables"""
-    conn = sqlite3.connect('astrology_db.sqlite3')
+    # Use DATA_DIR environment variable for data directory
+    data_dir = os.getenv('DATA_DIR', '.')
+    os.makedirs(data_dir, exist_ok=True)
+    db_path = os.path.join(data_dir, 'astrology_db.sqlite3')
+    conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
     
     # Create admins table

@@ -1,0 +1,49 @@
+# Systemd service file for Vedic Astrology Calculator
+# Place this file in /etc/systemd/system/
+# Then run: sudo systemctl enable vedic-astrology && sudo systemctl start vedic-astrology
+
+[Unit]
+Description=Vedic Astrology Calculator FastAPI Server
+After=network.target
+Wants=network.target
+
+[Service]
+Type=exec
+User=www-data
+Group=www-data
+WorkingDirectory=/opt/vedic-astrology
+Environment=PYTHONPATH=/opt/vedic-astrology
+Environment=ENVIRONMENT=production
+
+# Use virtual environment if available, otherwise fallback to system python
+ExecStartPre=/bin/bash -c 'if [ -f /opt/vedic-astrology/.venv/bin/activate ]; then echo "Using virtual environment"; else echo "Using system python"; fi'
+ExecStart=/bin/bash -c 'if [ -f /opt/vedic-astrology/.venv/bin/activate ]; then source /opt/vedic-astrology/.venv/bin/activate && python -m uvicorn main:app --host 127.0.0.1 --port 5000 --workers 1; else python3 -m uvicorn main:app --host 127.0.0.1 --port 5000 --workers 1; fi'
+
+# Restart behavior
+Restart=always
+RestartSec=10
+StartLimitInterval=60
+StartLimitBurst=3
+
+# Security settings
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/vedic-astrology/data /opt/vedic-astrology/logs
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+
+# Resource limits
+LimitNOFILE=65536
+MemoryMax=512M
+CPUQuota=100%
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=vedic-astrology
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,52 @@
+# Kubernetes Persistent Volume Claim for Vedic Astrology Calculator
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: vedic-astrology-pvc
+  namespace: vedic-astrology
+  labels:
+    app: vedic-astrology-calculator
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: standard  # Adjust based on your cluster's storage classes
+  resources:
+    requests:
+      storage: 1Gi
+---
+# Optional: StatefulSet for applications requiring persistent identity
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: vedic-astrology-stateful
+  namespace: vedic-astrology
+  labels:
+    app: vedic-astrology-calculator
+spec:
+  serviceName: vedic-astrology-headless
+  replicas: 1
+  selector:
+    matchLabels:
+      app: vedic-astrology-calculator
+  template:
+    metadata:
+      labels:
+        app: vedic-astrology-calculator
+    spec:
+      containers:
+      - name: vedic-astrology
+        image: vedic-astrology-calculator:latest
+        ports:
+        - containerPort: 5000
+        volumeMounts:
+        - name: data
+          mountPath: /app/data
+  volumeClaimTemplates:
+  - metadata:
+      name: data
+    spec:
+      accessModes: [ "ReadWriteOnce" ]
+      storageClassName: standard
+      resources:
+        requests:
+          storage: 1Gi

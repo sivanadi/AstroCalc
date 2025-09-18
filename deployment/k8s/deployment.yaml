@@ -1,0 +1,91 @@
+# Kubernetes deployment for Vedic Astrology Calculator
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vedic-astrology-app
+  namespace: vedic-astrology
+  labels:
+    app: vedic-astrology-calculator
+    version: v1.0.0
+spec:
+  replicas: 1  # Using SQLite - single instance to avoid file contention
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app: vedic-astrology-calculator
+  template:
+    metadata:
+      labels:
+        app: vedic-astrology-calculator
+        version: v1.0.0
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+      - name: vedic-astrology
+        image: ghcr.io/your-username/vedic-astrology-calculator:latest  # Update with your registry
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 5000
+          name: http
+          protocol: TCP
+        env:
+        - name: ENVIRONMENT
+          value: "production"
+        - name: PORT
+          value: "5000"
+        - name: WORKERS
+          value: "1"  # Single worker per container
+        envFrom:
+        - configMapRef:
+            name: vedic-astrology-config
+        - secretRef:
+            name: vedic-astrology-secrets
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "200m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 5000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 5000
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+        volumeMounts:
+        - name: ephemeris-data
+          mountPath: /app/ephe
+          readOnly: true
+        - name: app-data
+          mountPath: /app/data
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+      volumes:
+      - name: ephemeris-data
+        configMap:
+          name: ephemeris-data
+      - name: app-data
+        persistentVolumeClaim:
+          claimName: vedic-astrology-pvc

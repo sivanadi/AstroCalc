@@ -1,0 +1,35 @@
+# Kubernetes service for Vedic Astrology Calculator
+apiVersion: v1
+kind: Service
+metadata:
+  name: vedic-astrology-service
+  namespace: vedic-astrology
+  labels:
+    app: vedic-astrology-calculator
+spec:
+  type: ClusterIP
+  ports:
+  - port: 80
+    targetPort: 5000
+    protocol: TCP
+    name: http
+  selector:
+    app: vedic-astrology-calculator
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vedic-astrology-nodeport
+  namespace: vedic-astrology
+  labels:
+    app: vedic-astrology-calculator
+spec:
+  type: NodePort
+  ports:
+  - port: 80
+    targetPort: 5000
+    nodePort: 30080
+    protocol: TCP
+    name: http
+  selector:
+    app: vedic-astrology-calculator

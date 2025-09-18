@@ -1,0 +1,88 @@
+# Docker ignore file for optimal build performance
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+.venv/
+.pythonlibs/
+venv/
+ENV/
+env/
+
+# Development files
+.git/
+.gitignore
+README.md
+*.md
+docs/
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# Database files (use volumes instead)
+*.db
+*.sqlite3
+
+# Temporary files
+*.tmp
+*.temp
+tmp/
+temp/
+
+# Docker files (don't include in build)
+Dockerfile*
+docker-compose*.yml
+.dockerignore
+
+# Deployment files
+deployment/
+k8s/
+terraform/
+scripts/
+
+# Screenshots and attachments
+attached_assets/
+screenshots/
+
+# Editor backup files
+*~
+*.bak
+*.orig

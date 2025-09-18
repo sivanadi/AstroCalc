@@ -1,0 +1,8 @@
+# Kubernetes namespace for Vedic Astrology Calculator
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: vedic-astrology
+  labels:
+    app: vedic-astrology-calculator
+    environment: production
