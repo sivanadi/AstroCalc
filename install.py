@@ -156,6 +156,22 @@ class UniversalInstaller:
     
     def get_optimal_installation_method(self) -> str:
         """Determine the best installation method for this environment"""
+        # CloudPanel environment - prefer CloudPanel-specific methods
+        if self.cloudpanel_env['is_cloudpanel']:
+            if self.cloudpanel_env['has_uwsgi'] and self.cloudpanel_env['has_nginx']:
+                return 'cloudpanel_uwsgi'
+            elif self.cloudpanel_env['has_systemd']:
+                return 'cloudpanel_gunicorn'
+            else:
+                return 'cloudpanel_pip'
+        
+        # Replit environment - prefer uv or pip with correct binding
+        if self.replit_env['is_replit']:
+            if self.package_managers['uv']:
+                return 'replit_uv'
+            elif self.package_managers['pip']:
+                return 'replit_pip'
+                
         # Container environments - prefer pip for stability
         if self.platform_info['is_container']:
             if self.package_managers['pip']:
@@ -324,6 +340,130 @@ class UniversalInstaller:
         print("❌ Binary downloads not yet implemented")
         print("Please install Python and pip, then try again")
         return False
+    
+    def install_via_replit_uv(self) -> bool:
+        """Install using uv specifically optimized for Replit environment"""
+        print("🚀 Installing via uv (Replit-optimized)...")
+        try:
+            # Install dependencies using uv
+            self._run_command(['uv', 'sync', '--no-dev'])
+            
+            # Create Replit-optimized startup script
+            self._create_replit_startup_script('uv')
+            
+            print("✅ Replit installation complete!")
+            print("✅ IP binding automatically set to 0.0.0.0:5000 for Replit")
+            print("Run: uv run uvicorn main:app --host 0.0.0.0 --port 5000 --reload")
+            return True
+        except Exception as e:
+            print(f"❌ Replit uv installation failed: {e}")
+            return False
+    
+    def install_via_replit_pip(self) -> bool:
+        """Install using pip specifically optimized for Replit environment"""
+        print("🚀 Installing via pip (Replit-optimized)...")
+        try:
+            # Install the project and dependencies
+            self._run_command([sys.executable, '-m', 'pip', 'install', '.'])
+            
+            # Create Replit-optimized startup script
+            self._create_replit_startup_script('pip')
+            
+            print("✅ Replit installation complete!")
+            print("✅ IP binding automatically set to 0.0.0.0:5000 for Replit")
+            print("Run: python -m uvicorn main:app --host 0.0.0.0 --port 5000 --reload")
+            return True
+        except Exception as e:
+            print(f"❌ Replit pip installation failed: {e}")
+            return False
+    
+    def install_via_cloudpanel_uwsgi(self) -> bool:
+        """Install optimized for CloudPanel with uWSGI"""
+        print("🚀 Installing via CloudPanel (uWSGI)...")
+        try:
+            # Install dependencies in virtual environment
+            site_user = self.cloudpanel_env['site_user_pattern'] or 'site-user'
+            python_cmd = self.cloudpanel_env['python_versions'][0] if self.cloudpanel_env['python_versions'] else 'python3'
+            
+            # Create virtual environment in typical CloudPanel structure
+            venv_path = Path(f'/home/{site_user}/htdocs/domain.com/env')
+            self._run_command([python_cmd, '-m', 'venv', str(venv_path)])
+            
+            # Install dependencies
+            pip_path = venv_path / 'bin' / 'pip'
+            self._run_command([str(pip_path), 'install', '.'])
+            
+            # Create CloudPanel-specific configurations
+            self._create_uwsgi_config(site_user)
+            self._create_asgi_file()
+            
+            print("✅ CloudPanel uWSGI installation complete!")
+            print("✅ uWSGI configuration created for CloudPanel")
+            print("Next steps:")
+            print("1. Enable the uWSGI app: ln -s /etc/uwsgi/apps-available/domain.uwsgi.ini /etc/uwsgi/apps-enabled/")
+            print("2. Restart uWSGI: systemctl restart uwsgi")
+            return True
+        except Exception as e:
+            print(f"❌ CloudPanel uWSGI installation failed: {e}")
+            return False
+    
+    def install_via_cloudpanel_gunicorn(self) -> bool:
+        """Install optimized for CloudPanel with Gunicorn"""
+        print("🚀 Installing via CloudPanel (Gunicorn)...")
+        try:
+            # Install dependencies in virtual environment
+            site_user = self.cloudpanel_env['site_user_pattern'] or 'site-user'
+            python_cmd = self.cloudpanel_env['python_versions'][0] if self.cloudpanel_env['python_versions'] else 'python3'
+            
+            # Create virtual environment
+            venv_path = Path(f'/home/{site_user}/htdocs/domain.com/env')
+            self._run_command([python_cmd, '-m', 'venv', str(venv_path)])
+            
+            # Install dependencies including gunicorn
+            pip_path = venv_path / 'bin' / 'pip'
+            self._run_command([str(pip_path), 'install', '.', 'gunicorn'])
+            
+            # Create CloudPanel-specific configurations
+            self._create_gunicorn_service(site_user)
+            self._create_asgi_file()
+            
+            print("✅ CloudPanel Gunicorn installation complete!")
+            print("✅ Gunicorn service configuration created for CloudPanel")
+            print("Next steps:")
+            print("1. Enable service: systemctl enable gunicorn.socket")
+            print("2. Start service: systemctl start gunicorn.socket")
+            print("3. Reload daemon: systemctl daemon-reload")
+            return True
+        except Exception as e:
+            print(f"❌ CloudPanel Gunicorn installation failed: {e}")
+            return False
+    
+    def install_via_cloudpanel_pip(self) -> bool:
+        """Basic CloudPanel installation with pip"""
+        print("🚀 Installing via CloudPanel (pip)...")
+        try:
+            # Install dependencies in virtual environment
+            site_user = self.cloudpanel_env['site_user_pattern'] or 'site-user'
+            python_cmd = self.cloudpanel_env['python_versions'][0] if self.cloudpanel_env['python_versions'] else 'python3'
+            
+            # Create virtual environment
+            venv_path = Path(f'/home/{site_user}/htdocs/domain.com/env')
+            self._run_command([python_cmd, '-m', 'venv', str(venv_path)])
+            
+            # Install dependencies
+            pip_path = venv_path / 'bin' / 'pip'
+            self._run_command([str(pip_path), 'install', '.'])
+            
+            # Create basic WSGI file
+            self._create_asgi_file()
+            
+            print("✅ CloudPanel pip installation complete!")
+            print("✅ Basic configuration created for CloudPanel")
+            print("Manual configuration required for web server integration")
+            return True
+        except Exception as e:
+            print(f"❌ CloudPanel pip installation failed: {e}")
+            return False
     
     def _extract_dependencies_from_pyproject(self) -> List[str]:
         """Extract dependencies from pyproject.toml"""
@@ -517,6 +657,150 @@ volumes:
         with open('podman-compose.yml', 'w') as f:
             f.write(compose_content)
     
+    def _create_replit_startup_script(self, method: str) -> None:
+        """Create Replit-optimized startup scripts with correct IP binding"""
+        if self.platform_info['os'] == 'windows':
+            self._create_replit_windows_script(method)
+        else:
+            self._create_replit_unix_script(method)
+    
+    def _create_replit_unix_script(self, method: str) -> None:
+        """Create Unix startup script for Replit"""
+        script_content = "#!/bin/bash\n\n"
+        script_content += "# Replit-optimized startup script\n"
+        script_content += "# Automatically binds to 0.0.0.0:5000 for Replit compatibility\n\n"
+        
+        if method == 'uv':
+            script_content += "uv run uvicorn main:app --host 0.0.0.0 --port 5000 --reload\n"
+        elif method == 'pip':
+            script_content += "python -m uvicorn main:app --host 0.0.0.0 --port 5000 --reload\n"
+        
+        with open('start_replit.sh', 'w') as f:
+            f.write(script_content)
+        os.chmod('start_replit.sh', 0o755)
+    
+    def _create_replit_windows_script(self, method: str) -> None:
+        """Create Windows startup script for Replit"""
+        script_content = "@echo off\n\n"
+        script_content += "REM Replit-optimized startup script\n"
+        script_content += "REM Automatically binds to 0.0.0.0:5000 for Replit compatibility\n\n"
+        
+        if method == 'uv':
+            script_content += "uv run uvicorn main:app --host 0.0.0.0 --port 5000 --reload\n"
+        elif method == 'pip':
+            script_content += "python -m uvicorn main:app --host 0.0.0.0 --port 5000 --reload\n"
+        
+        with open('start_replit.bat', 'w') as f:
+            f.write(script_content)
+    
+    def _create_asgi_file(self) -> None:
+        """Create ASGI file for CloudPanel deployment with FastAPI"""
+        asgi_content = '''"""
+ASGI configuration for Vedic Astrology Calculator
+Optimized for CloudPanel deployment with FastAPI
+"""
+
+from main import app
+
+# FastAPI uses ASGI, not WSGI
+# This file is used by Gunicorn with UvicornWorker
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8090)
+'''
+        with open('asgi.py', 'w') as f:
+            f.write(asgi_content)
+    
+    def _create_uwsgi_config(self, site_user: str) -> None:
+        """Create uWSGI configuration for CloudPanel"""
+        uwsgi_config = f'''[uwsgi]
+plugins = python3
+master = true
+protocol = uwsgi
+socket = 127.0.0.1:8090
+wsgi-file = /home/{site_user}/htdocs/domain.com/wsgi.py
+virtualenv = /home/{site_user}/htdocs/domain.com/env
+buffer-size = 8192
+reload-on-rss = 250
+workers = 4
+enable-threads = true
+close-on-exec = true
+umask = 0022
+uid = {site_user}
+gid = {site_user}
+
+# Environment variables for production
+env = ENVIRONMENT=production
+env = DATA_DIR=/home/{site_user}/htdocs/domain.com/data
+
+# Logging
+logto = /var/log/uwsgi/app/vedic-astrology.log
+log-maxsize = 50000000
+log-backupcount = 5
+'''
+        
+        # Create the configuration directory if it doesn't exist
+        os.makedirs('/etc/uwsgi/apps-available', exist_ok=True)
+        
+        with open('/etc/uwsgi/apps-available/domain.uwsgi.ini', 'w') as f:
+            f.write(uwsgi_config)
+    
+    def _create_gunicorn_service(self, site_user: str) -> None:
+        """Create Gunicorn systemd service for CloudPanel"""
+        
+        # Create socket file
+        socket_config = '''[Unit]
+Description=gunicorn socket for vedic astrology
+
+[Socket]
+ListenStream=/run/gunicorn-vedic.sock
+
+[Install]
+WantedBy=sockets.target
+'''
+        
+        # Create service file
+        service_config = f'''[Unit]
+Description=gunicorn daemon for vedic astrology
+Requires=gunicorn-vedic.socket
+After=network.target
+
+[Service]
+Type=notify
+User={site_user}
+Group={site_user}
+RuntimeDirectory=gunicorn
+WorkingDirectory=/home/{site_user}/htdocs/domain.com
+ExecStart=/home/{site_user}/htdocs/domain.com/env/bin/gunicorn \\
+    --access-logfile - \\
+    --workers 3 \\
+    --worker-class uvicorn.workers.UvicornWorker \\
+    --bind unix:/run/gunicorn-vedic.sock \\
+    --timeout 120 \\
+    --keep-alive 2 \\
+    --max-requests 1000 \\
+    --preload \\
+    asgi:app
+ExecReload=/bin/kill -s HUP $MAINPID
+KillMode=mixed
+TimeoutStopSec=5
+PrivateTmp=true
+
+# Environment variables
+Environment=ENVIRONMENT=production
+Environment=DATA_DIR=/home/{site_user}/htdocs/domain.com/data
+
+[Install]
+WantedBy=multi-user.target
+'''
+        
+        # Write configuration files
+        with open('/etc/systemd/system/gunicorn-vedic.socket', 'w') as f:
+            f.write(socket_config)
+        
+        with open('/etc/systemd/system/gunicorn-vedic.service', 'w') as f:
+            f.write(service_config)
+    
     def display_system_info(self) -> None:
         """Display detected system information"""
         print("🔍 System Detection Results:")
@@ -555,7 +839,14 @@ volumes:
             'pip_venv': self.install_via_pip_venv,
             'docker': self.install_via_docker,
             'podman': self.install_via_podman,
-            'binary_download': self.install_via_binary_download
+            'binary_download': self.install_via_binary_download,
+            # Replit-optimized methods
+            'replit_uv': self.install_via_replit_uv,
+            'replit_pip': self.install_via_replit_pip,
+            # CloudPanel-optimized methods
+            'cloudpanel_uwsgi': self.install_via_cloudpanel_uwsgi,
+            'cloudpanel_gunicorn': self.install_via_cloudpanel_gunicorn,
+            'cloudpanel_pip': self.install_via_cloudpanel_pip
         }
         
         # Try optimal method first
@@ -568,7 +859,13 @@ volumes:
         
         # Try fallback methods in order of reliability
         print("\n🔄 Trying fallback methods...")
-        fallback_order = ['pip_venv', 'pip_native', 'uv_venv', 'docker', 'binary_download']
+        # Environment-specific fallback orders
+        if self.cloudpanel_env['is_cloudpanel']:
+            fallback_order = ['cloudpanel_gunicorn', 'cloudpanel_pip', 'pip_venv', 'pip_native']
+        elif self.replit_env['is_replit']:
+            fallback_order = ['replit_pip', 'replit_uv', 'pip_native', 'uv_native']
+        else:
+            fallback_order = ['pip_venv', 'pip_native', 'uv_venv', 'docker', 'binary_download']
         
         for fallback_method in fallback_order:
             if fallback_method != method and fallback_method in method_map:
