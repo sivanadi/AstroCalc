@@ -158,10 +158,11 @@ class UniversalInstaller:
         """Determine the best installation method for this environment"""
         # CloudPanel environment - prefer CloudPanel-specific methods
         if self.cloudpanel_env['is_cloudpanel']:
-            if self.cloudpanel_env['has_uwsgi'] and self.cloudpanel_env['has_nginx']:
-                return 'cloudpanel_uwsgi'
-            elif self.cloudpanel_env['has_systemd']:
+            # Prefer Gunicorn over uWSGI for FastAPI compatibility
+            if self.cloudpanel_env['has_systemd']:
                 return 'cloudpanel_gunicorn'
+            elif self.cloudpanel_env['has_nginx']:
+                return 'cloudpanel_pip'
             else:
                 return 'cloudpanel_pip'
         
@@ -378,34 +379,12 @@ class UniversalInstaller:
             return False
     
     def install_via_cloudpanel_uwsgi(self) -> bool:
-        """Install optimized for CloudPanel with uWSGI"""
-        print("🚀 Installing via CloudPanel (uWSGI)...")
-        try:
-            # Install dependencies in virtual environment
-            site_user = self.cloudpanel_env['site_user_pattern'] or 'site-user'
-            python_cmd = self.cloudpanel_env['python_versions'][0] if self.cloudpanel_env['python_versions'] else 'python3'
-            
-            # Create virtual environment in typical CloudPanel structure
-            venv_path = Path(f'/home/{site_user}/htdocs/domain.com/env')
-            self._run_command([python_cmd, '-m', 'venv', str(venv_path)])
-            
-            # Install dependencies
-            pip_path = venv_path / 'bin' / 'pip'
-            self._run_command([str(pip_path), 'install', '.'])
-            
-            # Create CloudPanel-specific configurations
-            self._create_uwsgi_config(site_user)
-            self._create_asgi_file()
-            
-            print("✅ CloudPanel uWSGI installation complete!")
-            print("✅ uWSGI configuration created for CloudPanel")
-            print("Next steps:")
-            print("1. Enable the uWSGI app: ln -s /etc/uwsgi/apps-available/domain.uwsgi.ini /etc/uwsgi/apps-enabled/")
-            print("2. Restart uWSGI: systemctl restart uwsgi")
-            return True
-        except Exception as e:
-            print(f"❌ CloudPanel uWSGI installation failed: {e}")
-            return False
+        """Install optimized for CloudPanel - redirects to Gunicorn for FastAPI compatibility"""
+        print("🚀 CloudPanel uWSGI detected - redirecting to Gunicorn for FastAPI compatibility...")
+        print("⚠️  uWSGI with FastAPI requires ASGI plugin (not commonly available)")
+        print("✅ Using Gunicorn with UvicornWorker instead (recommended)")
+        # Redirect to the working Gunicorn method
+        return self.install_via_cloudpanel_gunicorn()
     
     def install_via_cloudpanel_gunicorn(self) -> bool:
         """Install optimized for CloudPanel with Gunicorn"""
@@ -525,13 +504,16 @@ class UniversalInstaller:
         script_content = "@echo off\n\n"
         
         if method == 'uv':
+            script_content += "if not defined PORT set PORT=5000\n"
             script_content += "call .venv\\Scripts\\activate.bat\n"
-            script_content += "python -m uvicorn main:app --host 0.0.0.0 --port 5000 --reload\n"
+            script_content += "python -m uvicorn main:app --host 0.0.0.0 --port %PORT% --reload\n"
         elif method == 'poetry':
-            script_content += "poetry run uvicorn main:app --host 0.0.0.0 --port 5000 --reload\n"
+            script_content += "if not defined PORT set PORT=5000\n"
+            script_content += "poetry run uvicorn main:app --host 0.0.0.0 --port %PORT% --reload\n"
         elif method == 'pip' and python_path:
+            script_content += "if not defined PORT set PORT=5000\n"
             script_content += "call .venv\\Scripts\\activate.bat\n"
-            script_content += "python -m uvicorn main:app --host 0.0.0.0 --port 5000 --reload\n"
+            script_content += "python -m uvicorn main:app --host 0.0.0.0 --port %PORT% --reload\n"
         
         with open('start.bat', 'w') as f:
             f.write(script_content)
