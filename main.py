@@ -180,6 +180,9 @@ AUTHORIZED_DOMAINS = set(domain.strip() for domain in default_domains.split(',')
 API_KEYS = {}
 ACTIVE_SESSIONS = {}  # Now stores {token: {username: str, created_at: datetime}}
 
+# Initialize TimezoneFinder for automatic timezone detection
+tf = TimezoneFinder()
+
 # Request models
 class ChartRequest(BaseModel):
     year: int
@@ -436,6 +439,19 @@ def decimal_to_dms(decimal_degrees):
     minutes = int(minutes_float)
     seconds = (minutes_float - minutes) * 60
     return f"{degrees}°{minutes:02d}'{seconds:05.2f}\""
+
+def get_timezone_from_coordinates(lat: float, lon: float) -> str:
+    """Get timezone string from latitude and longitude coordinates"""
+    try:
+        timezone_name = tf.timezone_at(lng=lon, lat=lat)
+        if timezone_name:
+            return timezone_name
+        else:
+            # Fallback to UTC if no timezone found (e.g., ocean coordinates)
+            return 'UTC'
+    except Exception as e:
+        print(f"Error detecting timezone from coordinates ({lat}, {lon}): {e}")
+        return 'UTC'
 
 def convert_timezone_to_ut(year, month, day, hour, minute, second, timezone_str):
     """Convert local time to Universal Time"""
