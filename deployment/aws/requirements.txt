@@ -1,0 +1,14 @@
+# AWS Elastic Beanstalk requirements file
+# Generated from pyproject.toml for compatibility
+
+bcrypt>=4.3.0
+fastapi>=0.116.1
+pydantic>=2.11.9
+pyswisseph>=2.10.3.2
+pytz>=2025.2
+requests>=2.32.5
+timezonefinder>=8.0.0
+uvicorn>=0.35.0
+
+# Additional dependencies for production
+gunicorn>=21.2.0

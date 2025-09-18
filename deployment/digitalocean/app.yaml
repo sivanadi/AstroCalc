@@ -1,0 +1,59 @@
+# Digital Ocean App Platform specification for Vedic Astrology Calculator
+name: vedic-astrology-calculator
+
+services:
+  - name: api
+    source_dir: /
+    github:
+      repo: your-username/vedic-astrology-calculator
+      branch: main
+      deploy_on_push: true
+    
+    # Build configuration
+    build_command: |
+      pip install uv
+      uv sync --frozen
+    
+    # Run configuration
+    run_command: uv run uvicorn main:app --host 0.0.0.0 --port $PORT --workers 1
+    instance_count: 1
+    instance_size_slug: basic-xxs
+    
+    # Environment variables
+    envs:
+      - key: ENVIRONMENT
+        value: production
+      - key: DATA_DIR
+        value: /app/data
+    
+    # Health check
+    health_check:
+      http_path: /health
+      initial_delay_seconds: 60
+      period_seconds: 10
+      timeout_seconds: 5
+      success_threshold: 1
+      failure_threshold: 3
+    
+    # Routes
+    routes:
+      - path: /
+    
+    # Auto-scaling (for higher tiers)
+    autoscaling:
+      min_instance_count: 1
+      max_instance_count: 3
+      metrics:
+        cpu:
+          percent: 70
+
+# Static sites (if you want to serve static content separately)
+static_sites:
+  - name: static-assets
+    source_dir: static/
+    github:
+      repo: your-username/vedic-astrology-calculator
+      branch: main
+      deploy_on_push: true
+    routes:
+      - path: /static

@@ -198,6 +198,186 @@ class UniversalInstaller:
             
         return 'binary_download'
     
+    def show_cloud_deployment_options(self):
+        """Show available cloud deployment platforms"""
+        print("\n" + "="*60)
+        print("☁️  CLOUD DEPLOYMENT OPTIONS")
+        print("="*60)
+        
+        platforms = [
+            {
+                "name": "Google Cloud Run",
+                "code": "gcp",
+                "cost": "$0-5/month",
+                "setup_time": "5 minutes",
+                "best_for": "Serverless, auto-scaling",
+                "free_tier": "2M requests/month"
+            },
+            {
+                "name": "AWS Elastic Beanstalk", 
+                "code": "aws",
+                "cost": "$10-25/month",
+                "setup_time": "15 minutes",
+                "best_for": "Enterprise, full AWS ecosystem",
+                "free_tier": "750 hours/month (t2.micro)"
+            },
+            {
+                "name": "Oracle Cloud",
+                "code": "oracle", 
+                "cost": "$0-10/month",
+                "setup_time": "20 minutes",
+                "best_for": "Cost-effective, always-free tier",
+                "free_tier": "Always free compute instances"
+            },
+            {
+                "name": "Digital Ocean",
+                "code": "digitalocean",
+                "cost": "$5-12/month", 
+                "setup_time": "10 minutes",
+                "best_for": "Developer-friendly, simple",
+                "free_tier": "$200 credit for 60 days"
+            }
+        ]
+        
+        for platform in platforms:
+            print(f"\n🚀 {platform['name']} ({platform['code']})")
+            print(f"   💰 Cost: {platform['cost']}")
+            print(f"   ⏱️  Setup: {platform['setup_time']}")
+            print(f"   🎯 Best for: {platform['best_for']}")
+            print(f"   🆓 Free tier: {platform['free_tier']}")
+    
+    def deploy_to_cloud(self, platform: str, **kwargs) -> bool:
+        """Deploy to specified cloud platform"""
+        if platform == 'gcp':
+            return self.deploy_gcp(kwargs.get('project_id'))
+        elif platform == 'aws':
+            return self.deploy_aws(kwargs.get('app_name'), kwargs.get('region'))
+        elif platform == 'oracle':
+            return self.deploy_oracle()
+        elif platform == 'digitalocean':
+            return self.deploy_digitalocean(kwargs.get('app_name'), kwargs.get('repo_url'))
+        else:
+            print(f"❌ Unsupported cloud platform: {platform}")
+            return False
+    
+    def deploy_gcp(self, project_id=None) -> bool:
+        """Deploy to Google Cloud Run"""
+        print("\n" + "="*50)
+        print("🚀 DEPLOYING TO GOOGLE CLOUD RUN")
+        print("="*50)
+        
+        if not shutil.which('gcloud'):
+            print("❌ Google Cloud SDK not found!")
+            print("   Please install it from: https://cloud.google.com/sdk/docs/install")
+            return False
+        
+        if not project_id:
+            project_id = input("Enter your Google Cloud project ID: ").strip()
+            if not project_id:
+                print("❌ Project ID is required!")
+                return False
+        
+        script_path = Path("deployment/gcp/deploy.sh")
+        if not script_path.exists():
+            print("❌ GCP deployment script not found!")
+            return False
+        
+        print(f"📋 Using project: {project_id}")
+        try:
+            subprocess.run(f"bash deployment/gcp/deploy.sh {project_id}", shell=True, check=True)
+            return True
+        except subprocess.CalledProcessError:
+            print("❌ GCP deployment failed!")
+            return False
+    
+    def deploy_aws(self, app_name=None, region=None) -> bool:
+        """Deploy to AWS Elastic Beanstalk"""
+        print("\n" + "="*50)
+        print("🚀 DEPLOYING TO AWS ELASTIC BEANSTALK")
+        print("="*50)
+        
+        if not shutil.which('aws'):
+            print("❌ AWS CLI not found!")
+            print("   Please install it from: https://aws.amazon.com/cli/")
+            return False
+        
+        if not app_name:
+            app_name = input("Enter application name (vedic-astrology-calculator): ").strip() or "vedic-astrology-calculator"
+        
+        if not region:
+            region = input("Enter AWS region (us-east-1): ").strip() or "us-east-1"
+        
+        script_path = Path("deployment/aws/deploy.sh")
+        if not script_path.exists():
+            print("❌ AWS deployment script not found!")
+            return False
+        
+        print(f"📋 App: {app_name}, Region: {region}")
+        try:
+            subprocess.run(f"bash deployment/aws/deploy.sh {app_name} {region}", shell=True, check=True)
+            return True
+        except subprocess.CalledProcessError:
+            print("❌ AWS deployment failed!")
+            return False
+    
+    def deploy_oracle(self) -> bool:
+        """Deploy to Oracle Cloud"""
+        print("\n" + "="*50)
+        print("🚀 DEPLOYING TO ORACLE CLOUD")
+        print("="*50)
+        
+        print("Oracle Cloud deployment requires manual setup on your compute instance.")
+        print("\n📋 Prerequisites:")
+        print("1. Oracle Cloud account with a compute instance")
+        print("2. SSH access to your compute instance")
+        print("3. Your application code uploaded to the instance")
+        
+        proceed = input("\nDo you have an Oracle Cloud compute instance ready? (y/n): ").strip().lower()
+        if proceed != 'y':
+            print("   Please create an Oracle Cloud compute instance first:")
+            print("   https://cloud.oracle.com/compute/instances")
+            return False
+        
+        script_path = Path("deployment/oracle/compute_setup.sh")
+        if not script_path.exists():
+            print("❌ Oracle setup script not found!")
+            return False
+        
+        print("\n📂 Copy the setup script to your Oracle Cloud instance:")
+        print(f"   scp {script_path} opc@YOUR_INSTANCE_IP:~/")
+        print("   ssh opc@YOUR_INSTANCE_IP 'bash ~/compute_setup.sh'")
+        print("\n✅ Oracle Cloud setup instructions provided!")
+        return True
+    
+    def deploy_digitalocean(self, app_name=None, repo_url=None) -> bool:
+        """Deploy to Digital Ocean App Platform"""
+        print("\n" + "="*50)
+        print("🚀 DEPLOYING TO DIGITAL OCEAN")
+        print("="*50)
+        
+        if not app_name:
+            app_name = input("Enter application name (vedic-astrology-calculator): ").strip() or "vedic-astrology-calculator"
+        
+        if not repo_url:
+            repo_url = input("Enter your GitHub repository URL: ").strip()
+            if not repo_url:
+                print("❌ GitHub repository URL is required!")
+                return False
+        
+        script_path = Path("deployment/digitalocean/deploy.sh")
+        if not script_path.exists():
+            print("❌ Digital Ocean deployment script not found!")
+            return False
+        
+        print(f"📋 App: {app_name}")
+        print(f"📂 Repo: {repo_url}")
+        try:
+            subprocess.run(f"bash deployment/digitalocean/deploy.sh {app_name} {repo_url}", shell=True, check=True)
+            return True
+        except subprocess.CalledProcessError:
+            print("❌ Digital Ocean deployment failed!")
+            return False
+    
     def install_via_podman(self) -> bool:
         """Install using Podman (same as Docker)"""
         print("🚀 Installing via Podman...")
@@ -863,7 +1043,34 @@ WantedBy=multi-user.target
         return False
 
 def main():
-    """Main entry point"""
+    """Main entry point with cloud deployment support"""
+    # Check if cloud deployment was requested
+    if len(sys.argv) > 1 and sys.argv[1] == 'cloud':
+        installer = UniversalInstaller()
+        
+        if len(sys.argv) > 2:
+            # Direct cloud platform specified
+            platform = sys.argv[2]
+            kwargs = {}
+            # Parse additional arguments
+            for i in range(3, len(sys.argv), 2):
+                if i + 1 < len(sys.argv):
+                    kwargs[sys.argv[i].lstrip('--')] = sys.argv[i + 1]
+            
+            success = installer.deploy_to_cloud(platform, **kwargs)
+            sys.exit(0 if success else 1)
+        else:
+            # Show cloud options and let user choose
+            installer.show_cloud_deployment_options()
+            platform = input("\nSelect cloud platform (gcp/aws/oracle/digitalocean): ").strip().lower()
+            if platform in ['gcp', 'aws', 'oracle', 'digitalocean']:
+                success = installer.deploy_to_cloud(platform)
+                sys.exit(0 if success else 1)
+            else:
+                print("❌ Invalid platform selected!")
+                sys.exit(1)
+    
+    # Regular local installation
     installer = UniversalInstaller()
     success = installer.install()
     
@@ -874,12 +1081,17 @@ def main():
         print("2. Access the web interface at http://localhost:5000")
         print("3. API documentation at http://localhost:5000/docs")
         print("4. Admin panel at http://localhost:5000/admin")
+        print("\n☁️  For cloud deployment, run:")
+        print("   python install.py cloud [platform]")
+        print("   Platforms: gcp, aws, oracle, digitalocean")
     else:
         print("\n💡 Manual installation:")
         print("1. Install Python 3.11+")
         print("2. Install uv: pip install uv")
         print("3. Run: uv sync")
         print("4. Run: uv run uvicorn main:app --host 0.0.0.0 --port 5000")
+        print("\n☁️  For cloud deployment, run:")
+        print("   python install.py cloud [platform]")
         sys.exit(1)
 
 if __name__ == "__main__":
