@@ -15,6 +15,7 @@ from typing import Dict, Union, Optional, List
 import hashlib
 import bcrypt
 import sqlite3
+from timezonefinder import TimezoneFinder
 
 app = FastAPI(
     title="Vedic Astrology Calculator", 
