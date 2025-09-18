@@ -830,7 +830,7 @@
         async function deleteDomain(domain) {
             if (confirm('Remove this domain?')) {
                 try {
-                    await fetch('/admin/domains/' + domain, {
+                    await fetch('/admin/domains/' + encodeURIComponent(domain), {
                         method: 'DELETE',
                         headers: { 'Authorization': 'Bearer ' + sessionToken }
                     });
