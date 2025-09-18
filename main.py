@@ -3,7 +3,7 @@ from fastapi.responses import JSONResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, validator, model_validator
 from enum import Enum
 import swisseph as swe
 import pytz
@@ -156,8 +156,8 @@ AYANAMSHA_OPTIONS = {
     'valens_moon': {'id': swe.SIDM_VALENS_MOON, 'name': 'Valens (Moon)'}
 }
 
-# Default to Lahiri
-swe.set_sid_mode(swe.SIDM_LAHIRI)
+# Default to J.N. Bhasin
+swe.set_sid_mode(swe.SIDM_JN_BHASIN)
 
 # Planet constants for Swiss Ephemeris
 PLANETS = {
@@ -205,23 +205,116 @@ tf = TimezoneFinder()
 
 # Request models
 class ChartRequest(BaseModel):
-    year: int
-    month: int
-    day: int
-    hour: int  # Changed to int for proper separation
-    minute: int = 0  # Added minute field
-    second: int = 0  # Added second field
+    # Original numeric fields (for backward compatibility)
+    year: Optional[int] = None
+    month: Optional[int] = None
+    day: Optional[int] = None
+    hour: Optional[int] = None
+    minute: int = 0
+    second: int = 0
+    
+    # New combined date/time fields
+    date: Optional[str] = None  # DD/MM/YYYY format
+    time: Optional[str] = None  # HH:MM:SS format
+    
+    # Location and timezone
     lat: float
     lon: float
     tz: Optional[str] = None  # Made optional - will auto-detect from coordinates if not provided
-    # Legacy fields - kept for backward compatibility
-    ayanamsha: str = 'lahiri'  # Will be used as fallback if natal/transit specific ones not provided
-    house_system: str = 'placidus'  # Will be used as fallback if natal/transit specific ones not provided
+    
+    # Ayanamsha and house system fields with fallback support
+    ayanamsha: str = 'jn_bhasin'  # Default with fallback to krishnamurti
+    house_system: str = 'equal'  # Default with fallback to topocentric
+    
     # New separate fields - optional to maintain backward compatibility
     natal_ayanamsha: Optional[str] = None  # Separate ayanamsha for natal calculations
     natal_house_system: Optional[str] = None  # Separate house system for natal calculations
     transit_ayanamsha: Optional[str] = None  # Separate ayanamsha for transit calculations
     transit_house_system: Optional[str] = None  # Separate house system for transit calculations
+    
+    @model_validator(mode='before')
+    @classmethod
+    def validate_date_time_inputs(cls, values):
+        """Parse combined date/time formats or validate numeric inputs"""
+        date_str = values.get('date')
+        time_str = values.get('time')
+        year = values.get('year')
+        month = values.get('month')
+        day = values.get('day')
+        hour = values.get('hour')
+        
+        # If combined formats are provided, parse them
+        if date_str:
+            try:
+                # Parse DD/MM/YYYY format
+                date_parts = date_str.split('/')
+                if len(date_parts) != 3:
+                    raise ValueError("Date must be in DD/MM/YYYY format")
+                
+                parsed_day = int(date_parts[0])
+                parsed_month = int(date_parts[1])
+                parsed_year = int(date_parts[2])
+                
+                if not (1 <= parsed_day <= 31):
+                    raise ValueError("Day must be between 1 and 31")
+                if not (1 <= parsed_month <= 12):
+                    raise ValueError("Month must be between 1 and 12")
+                if not (1900 <= parsed_year <= 2100):
+                    raise ValueError("Year must be between 1900 and 2100")
+                    
+                values['year'] = parsed_year
+                values['month'] = parsed_month
+                values['day'] = parsed_day
+                
+            except (ValueError, IndexError) as e:
+                raise ValueError(f"Invalid date format: {e}. Expected DD/MM/YYYY (e.g., 15/01/2024)")
+        
+        if time_str:
+            try:
+                # Parse HH:MM:SS format
+                time_parts = time_str.split(':')
+                if len(time_parts) != 3:
+                    raise ValueError("Time must be in HH:MM:SS format")
+                
+                parsed_hour = int(time_parts[0])
+                parsed_minute = int(time_parts[1])
+                parsed_second = int(time_parts[2])
+                
+                if not (0 <= parsed_hour <= 23):
+                    raise ValueError("Hour must be between 0 and 23")
+                if not (0 <= parsed_minute <= 59):
+                    raise ValueError("Minute must be between 0 and 59")
+                if not (0 <= parsed_second <= 59):
+                    raise ValueError("Second must be between 0 and 59")
+                    
+                values['hour'] = parsed_hour
+                values['minute'] = parsed_minute
+                values['second'] = parsed_second
+                
+            except (ValueError, IndexError) as e:
+                raise ValueError(f"Invalid time format: {e}. Expected HH:MM:SS (e.g., 14:30:00)")
+        
+        # Ensure we have all required date/time values
+        if values.get('year') is None or values.get('month') is None or values.get('day') is None or values.get('hour') is None:
+            raise ValueError("Either provide 'date' and 'time' strings, or 'year', 'month', 'day', and 'hour' numeric values")
+            
+        return values
+    
+    @validator('ayanamsha')
+    def validate_ayanamsha_with_fallback(cls, v):
+        """Validate ayanamsha with automatic fallback"""
+        if v not in AYANAMSHA_OPTIONS:
+            print(f"Warning: Invalid ayanamsha '{v}', falling back to 'jn_bhasin'")
+            return 'jn_bhasin'
+        return v
+    
+    @validator('house_system')
+    def validate_house_system_with_fallback(cls, v):
+        """Validate house system with automatic fallback"""
+        if v not in HOUSE_SYSTEMS:
+            print(f"Warning: Invalid house system '{v}', falling back to 'equal'")
+            return 'equal'
+        return v
 
 class AdminLogin(BaseModel):
     username: str
@@ -2441,8 +2534,8 @@ async def calculate_chart_get(
     minute: int = 0,
     second: int = 0,
     tz: Optional[str] = None,
-    ayanamsha: str = 'lahiri',
-    house_system: str = 'placidus',
+    ayanamsha: str = 'jn_bhasin',
+    house_system: str = 'equal',
     natal_ayanamsha: str = '',
     natal_house_system: str = '',
     transit_ayanamsha: str = '',
@@ -2499,8 +2592,8 @@ async def calculate_chart_internal(
     lat: float,
     lon: float,
     tz: str = 'UTC',
-    ayanamsha: str = 'lahiri',
-    house_system: str = 'placidus'
+    ayanamsha: str = 'jn_bhasin',
+    house_system: str = 'equal'
 ):
     """
     Calculate Vedic astrology chart with planetary longitudes and Ascendant.

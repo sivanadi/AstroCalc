@@ -21,6 +21,17 @@ This comprehensive guide demonstrates how to integrate the Vedic Astrology Calcu
 
 **Base URL**: `https://your-api-domain.com` (replace with your actual domain)
 
+### Frontend Input Format Updates
+The included frontend now uses combined input formats for better user experience:
+- **Date Format**: DD/MM/YYYY (e.g., "15/01/2024")
+- **Time Format**: HH:MM:SS (e.g., "14:30:00" for 2:30 PM)
+
+The API still accepts individual parameters (year, month, day, hour, minute, second) as documented below, but the frontend automatically parses the combined formats before sending requests.
+
+### Default System Changes
+- **Default Ayanamsha**: J.N. Bhasin (fallback: Krishnamurti)
+- **Default House System**: Equal House (fallback: Topocentric)
+
 ### Health Check
 ```bash
 GET /health
@@ -51,11 +62,11 @@ The API supports over 40 different ayanamsha systems. Here are the most commonly
 
 ```typescript
 const AYANAMSHA_OPTIONS = {
+  'jn_bhasin': 'J.N. Bhasin', // Default ayanamsha
+  'krishnamurti': 'Krishnamurti', // Fallback ayanamsha
   'lahiri': 'N.C. Lahiri',
   'raman': 'B.V. Raman', 
-  'krishnamurti': 'Krishnamurti',
   'yukteshwar': 'Yukteshwar',
-  'jn_bhasin': 'J.N. Bhasin',
   'suryasiddhanta': 'Suryasiddhanta',
   'aryabhata': 'Aryabhata',
   'true_citra': 'True Citra',
@@ -77,9 +88,9 @@ The API supports multiple house systems:
 
 ```typescript
 const HOUSE_SYSTEMS = {
+  'equal': 'Equal House', // Default house system
+  'topocentric': 'Topocentric', // Fallback house system
   'placidus': 'Placidus',
-  'equal': 'Equal House',
-  'topocentric': 'Topocentric', 
   'sripati': 'Sripati'
 };
 ```
@@ -118,8 +129,8 @@ const response = await fetch(`${API_BASE_URL}/chart?` + new URLSearchParams({
   lat: '28.6139',
   lon: '77.2090',
   tz: 'Asia/Kolkata',
-  ayanamsha: 'lahiri',
-  house_system: 'placidus'
+  ayanamsha: 'jn_bhasin',
+  house_system: 'equal'
 }), {
   headers: {
     'Authorization': `Bearer ${API_KEY}` // If using API key auth
@@ -158,8 +169,8 @@ const chartData: ChartRequest = {
   lat: 28.6139,
   lon: 77.2090,
   tz: 'Asia/Kolkata',
-  ayanamsha: 'lahiri',
-  house_system: 'placidus'
+  ayanamsha: 'jn_bhasin',
+  house_system: 'equal'
 };
 
 const response = await fetch(`${API_BASE_URL}/chart`, {
@@ -214,8 +225,8 @@ interface ChartRequest {
   lat: number; // Latitude in decimal degrees
   lon: number; // Longitude in decimal degrees
   tz?: string; // Timezone (default: 'UTC')
-  ayanamsha?: string; // Default: 'lahiri'
-  house_system?: string; // Default: 'placidus'
+  ayanamsha?: string; // Default: 'jn_bhasin'
+  house_system?: string; // Default: 'equal'
   natal_ayanamsha?: string; // Separate ayanamsha for natal
   natal_house_system?: string; // Separate house system for natal
   transit_ayanamsha?: string; // Separate ayanamsha for transit
@@ -1556,8 +1567,8 @@ export function BirthChartCalculator() {
           lat: birthData.latitude,
           lon: birthData.longitude,
           tz: birthData.timezone,
-          ayanamsha: 'lahiri',
-          house_system: 'placidus'
+          ayanamsha: 'jn_bhasin',
+          house_system: 'equal'
         })
       });
       
@@ -1594,8 +1605,8 @@ const getTransitAnalysis = async (natalData) => {
     day: now.getDate(),
     hour: now.getHours(),
     minute: now.getMinutes(),
-    natal_ayanamsha: 'lahiri',
-    transit_ayanamsha: 'lahiri'
+    natal_ayanamsha: 'jn_bhasin',
+    transit_ayanamsha: 'jn_bhasin'
   };
 
   const response = await fetch('/api/chart', {

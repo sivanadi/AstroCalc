@@ -13,7 +13,7 @@ import shutil
 import urllib.request
 import tempfile
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Any
 
 class UniversalInstaller:
     def __init__(self):
@@ -89,7 +89,7 @@ class UniversalInstaller:
         servers = ['nginx', 'apache2', 'httpd', 'caddy']
         return {server: shutil.which(server) is not None for server in servers}
     
-    def _detect_replit_environment(self) -> Dict[str, any]:
+    def _detect_replit_environment(self) -> Dict[str, Any]:
         """Detect Replit-specific environment details"""
         replit_indicators = {
             'is_replit': bool(os.getenv('REPLIT_DEV_DOMAIN')),
@@ -101,7 +101,7 @@ class UniversalInstaller:
         }
         return replit_indicators
     
-    def _detect_cloudpanel_environment(self) -> Dict[str, any]:
+    def _detect_cloudpanel_environment(self) -> Dict[str, Any]:
         """Detect CloudPanel environment and configuration"""
         cloudpanel_indicators = {
             'is_cloudpanel': any([

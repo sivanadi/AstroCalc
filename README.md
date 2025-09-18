@@ -5,9 +5,9 @@ A comprehensive FastAPI web application for Vedic astrology calculations using S
 ## Features
 
 ### Core Astrology Engine
-- **40+ Ayanamsha Systems**: Lahiri, Krishnamurti, Raman, Yukteshwar, and many more traditional and modern systems
+- **40+ Ayanamsha Systems**: J.N. Bhasin (default), Krishnamurti (fallback), Lahiri, Raman, Yukteshwar, and many more traditional and modern systems
 - **9 Vedic Planets**: Sun, Moon, Mars, Mercury, Jupiter, Venus, Saturn, Rahu (North Node), Ketu (South Node)
-- **Multiple House Systems**: Placidus (default), Equal House, Topocentric, and Sripati
+- **Multiple House Systems**: Equal House (default), Topocentric (fallback), Placidus, and Sripati
 - **Dual Chart Support**: Both natal and transit calculations in a single API call
 - **High Precision**: Full 6-decimal precision with DMS (Degrees, Minutes, Seconds) format display
 - **Swiss Ephemeris**: Professional-grade astronomical calculations with industry-standard accuracy
@@ -15,7 +15,7 @@ A comprehensive FastAPI web application for Vedic astrology calculations using S
 
 ### User Interface
 - **Responsive Frontend**: Modern HTML5/CSS3/JavaScript interface optimized for all devices
-- **Interactive Forms**: Date picker, time input, timezone selection, and location coordinates
+- **Enhanced Input Forms**: Combined date format (DD/MM/YYYY), time format (HH:MM:SS), timezone selection, and location coordinates
 - **Real-time Results**: Instant chart calculations with copy-to-clipboard functionality
 - **Professional Display**: Both simplified (2 decimal) and full precision (6 decimal) planetary positions
 - **DMS Format**: Traditional Degrees°Minutes'Seconds" display for ayanamsha values
@@ -49,10 +49,10 @@ The server runs automatically on port 5000. Open your browser and navigate to th
 5. Set up API keys with custom rate limits and authorized domains as needed
 
 ### 3. Frontend Interface
-- Fill in birth details: date, time, location coordinates
+- Fill in birth details using combined formats: date (DD/MM/YYYY), time (HH:MM:SS), location coordinates
 - Select your preferred timezone from the dropdown
-- Choose from 40+ ayanamsha systems (default: Lahiri)
-- Select house system (Placidus, Equal, Topocentric, Sripati)
+- Choose from 40+ ayanamsha systems (default: J.N. Bhasin, fallback: Krishnamurti)
+- Select house system (default: Equal House, fallback: Topocentric, also: Placidus, Sripati)
 - Click "Calculate Chart" for instant natal and transit results
 - Use copy buttons to copy specific planetary positions or full JSON
 
@@ -100,8 +100,8 @@ Calculate chart with URL parameters for external integrations.
 - `lat` (float): Latitude in degrees (positive for North)
 - `lon` (float): Longitude in degrees (positive for East)
 - `tz` (string): Timezone (e.g., "Asia/Kolkata", "America/New_York")
-- `ayanamsha` (string): Ayanamsha system (default: "lahiri")
-- `house_system` (string): House system (default: "placidus")
+- `ayanamsha` (string): Ayanamsha system (default: "jn_bhasin")
+- `house_system` (string): House system (default: "equal")
 - `natal_ayanamsha` (string): Natal chart ayanamsha (optional, falls back to ayanamsha)
 - `natal_house_system` (string): Natal chart house system (optional, falls back to house_system)
 - `transit_ayanamsha` (string): Transit chart ayanamsha (optional, falls back to ayanamsha)
@@ -111,11 +111,11 @@ Calculate chart with URL parameters for external integrations.
 ```bash
 # Basic chart calculation
 curl -H "Authorization: Bearer your_api_key_here" \
-     "http://localhost:5000/chart?year=2024&month=9&day=16&hour=12&minute=30&second=15&lat=28.6139&lon=77.2090&tz=Asia/Kolkata&ayanamsha=krishnamurti&house_system=equal"
+     "http://localhost:5000/chart?year=2024&month=9&day=16&hour=12&minute=30&second=15&lat=28.6139&lon=77.2090&tz=Asia/Kolkata&ayanamsha=jn_bhasin&house_system=equal"
 
 # Natal and transit with different systems
 curl -H "Authorization: Bearer your_api_key_here" \
-     "http://localhost:5000/chart?year=2024&month=9&day=16&hour=12&lat=28.6139&lon=77.2090&natal_ayanamsha=lahiri&transit_ayanamsha=krishnamurti&natal_house_system=placidus&transit_house_system=equal"
+     "http://localhost:5000/chart?year=2024&month=9&day=16&hour=12&lat=28.6139&lon=77.2090&natal_ayanamsha=jn_bhasin&transit_ayanamsha=krishnamurti&natal_house_system=equal&transit_house_system=topocentric"
 ```
 
 #### POST /chart
@@ -133,10 +133,10 @@ Calculate chart with JSON payload for programmatic access.
   "lat": 28.6139,
   "lon": 77.2090,
   "tz": "Asia/Kolkata",
-  "ayanamsha": "krishnamurti",
+  "ayanamsha": "jn_bhasin",
   "house_system": "equal",
-  "natal_ayanamsha": "lahiri",
-  "natal_house_system": "placidus",
+  "natal_ayanamsha": "jn_bhasin",
+  "natal_house_system": "equal",
   "transit_ayanamsha": "krishnamurti",
   "transit_house_system": "equal"
 }
@@ -333,8 +333,9 @@ print(hashed.decode('utf-8'))
 The application supports 40+ ayanamsha systems including:
 
 **Popular Systems:**
-- **Lahiri** (default) - Most widely used in Indian astrology
-- **Krishnamurti** - Used in KP astrology system  
+- **J.N. Bhasin** (default) - Precise astronomical calculation system
+- **Krishnamurti** (fallback) - Used in KP astrology system  
+- **Lahiri** - Most widely used in Indian astrology
 - **Raman** - B.V. Raman's ayanamsha
 - **Yukteshwar** - Sri Yukteshwar's calculation
 
@@ -355,9 +356,9 @@ The application supports 40+ ayanamsha systems including:
 
 Choose from multiple house division systems:
 
-- **Placidus** (default) - Most common in Western and some Vedic traditions
-- **Equal House** - 30° equal divisions from Ascendant
-- **Topocentric** - Based on observer's location on Earth's surface
+- **Equal House** (default) - 30° equal divisions from Ascendant, preferred in traditional Vedic astrology
+- **Topocentric** (fallback) - Based on observer's location on Earth's surface
+- **Placidus** - Most common in Western and some Vedic traditions
 - **Sripati** - Traditional Vedic system with proportional houses
 
 ## Technical Specifications

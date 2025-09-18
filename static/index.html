@@ -334,46 +334,15 @@
             <form id="astrologyForm">
                 <div class="form-grid">
                     <div class="form-group">
-                        <label for="year">Year:</label>
-                        <input type="number" id="year" name="year" min="1900" max="2100" value="2024" required>
+                        <label for="date">Date (DD/MM/YYYY):</label>
+                        <input type="text" id="date" name="date" placeholder="15/01/2024" pattern="\d{2}/\d{2}/\d{4}" required>
+                        <small>Format: DD/MM/YYYY (e.g., 15/01/2024)</small>
                     </div>
                     
                     <div class="form-group">
-                        <label for="month">Month:</label>
-                        <select id="month" name="month" required>
-                            <option value="1">January</option>
-                            <option value="2">February</option>
-                            <option value="3">March</option>
-                            <option value="4">April</option>
-                            <option value="5">May</option>
-                            <option value="6">June</option>
-                            <option value="7">July</option>
-                            <option value="8">August</option>
-                            <option value="9">September</option>
-                            <option value="10">October</option>
-                            <option value="11">November</option>
-                            <option value="12">December</option>
-                        </select>
-                    </div>
-                    
-                    <div class="form-group">
-                        <label for="day">Day:</label>
-                        <input type="number" id="day" name="day" min="1" max="31" value="15" required>
-                    </div>
-                    
-                    <div class="form-group">
-                        <label for="hour">Hour (24-format):</label>
-                        <input type="number" id="hour" name="hour" min="0" max="23" value="12" required>
-                    </div>
-                    
-                    <div class="form-group">
-                        <label for="minute">Minute:</label>
-                        <input type="number" id="minute" name="minute" min="0" max="59" value="0" required>
-                    </div>
-                    
-                    <div class="form-group">
-                        <label for="second">Second:</label>
-                        <input type="number" id="second" name="second" min="0" max="59" value="0" required>
+                        <label for="time">Time (HH:MM:SS):</label>
+                        <input type="text" id="time" name="time" placeholder="12:00:00" pattern="\d{2}:\d{2}:\d{2}" required>
+                        <small>Format: HH:MM:SS (24-hour format, e.g., 12:00:00)</small>
                     </div>
                     
                     <div class="form-group">
@@ -392,11 +361,11 @@
                     <div class="form-group">
                         <label for="ayanamsha">Ayanamsha:</label>
                         <select id="ayanamsha" name="ayanamsha">
+                            <option value="jn_bhasin" selected>J.N. Bhasin (Default)</option>
+                            <option value="krishnamurti">Krishnamurti (Fallback)</option>
                             <option value="lahiri">N.C. Lahiri</option>
                             <option value="raman">B.V. Raman</option>
-                            <option value="krishnamurti">Krishnamurti</option>
                             <option value="yukteshwar">Yukteshwar</option>
-                            <option value="jn_bhasin">J.N. Bhasin</option>
                             <option value="true_citra">True Citra</option>
                             <option value="true_revati">True Revati</option>
                             <option value="true_pushya">True Pushya</option>
@@ -406,9 +375,9 @@
                     <div class="form-group">
                         <label for="house_system">House System:</label>
                         <select id="house_system" name="house_system">
+                            <option value="equal" selected>Equal House (Default)</option>
+                            <option value="topocentric">Topocentric (Fallback)</option>
                             <option value="placidus">Placidus</option>
-                            <option value="equal">Equal House</option>
-                            <option value="topocentric">Topocentric</option>
                             <option value="sripati">Sripati</option>
                         </select>
                     </div>
@@ -501,13 +470,50 @@
             const formData = new FormData(e.target);
             const data = Object.fromEntries(formData.entries());
             
+            // Parse date from DD/MM/YYYY format
+            const dateParts = data.date.split('/');
+            if (dateParts.length !== 3) {
+                document.getElementById('error').innerHTML = 'Please enter date in DD/MM/YYYY format (e.g., 15/01/2024)';
+                document.getElementById('error').style.display = 'block';
+                return;
+            }
+            
+            const day = parseInt(dateParts[0]);
+            const month = parseInt(dateParts[1]);
+            const year = parseInt(dateParts[2]);
+            
+            // Parse time from HH:MM:SS format
+            const timeParts = data.time.split(':');
+            if (timeParts.length !== 3) {
+                document.getElementById('error').innerHTML = 'Please enter time in HH:MM:SS format (e.g., 12:00:00)';
+                document.getElementById('error').style.display = 'block';
+                return;
+            }
+            
+            const hour = parseInt(timeParts[0]);
+            const minute = parseInt(timeParts[1]);
+            const second = parseInt(timeParts[2]);
+            
+            // Validation
+            if (isNaN(day) || day < 1 || day > 31 || isNaN(month) || month < 1 || month > 12 || isNaN(year) || year < 1900 || year > 2100) {
+                document.getElementById('error').innerHTML = 'Please enter a valid date in DD/MM/YYYY format';
+                document.getElementById('error').style.display = 'block';
+                return;
+            }
+            
+            if (isNaN(hour) || hour < 0 || hour > 23 || isNaN(minute) || minute < 0 || minute > 59 || isNaN(second) || second < 0 || second > 59) {
+                document.getElementById('error').innerHTML = 'Please enter a valid time in HH:MM:SS format (24-hour)';
+                document.getElementById('error').style.display = 'block';
+                return;
+            }
+            
             const requestData = {
-                year: parseInt(data.year),
-                month: parseInt(data.month),
-                day: parseInt(data.day),
-                hour: parseInt(data.hour),
-                minute: parseInt(data.minute),
-                second: parseInt(data.second),
+                year: year,
+                month: month,
+                day: day,
+                hour: hour,
+                minute: minute,
+                second: second,
                 lat: parseFloat(data.lat),
                 lon: parseFloat(data.lon),
                 ayanamsha: data.ayanamsha,
@@ -782,22 +788,32 @@ Date: ${currentResults.other_details.transit_date_formatted} | Ayanamsha: ${curr
             document.getElementById('error').style.display = 'none';
             
             // Reset to default values
-            document.getElementById('year').value = '2024';
-            document.getElementById('month').value = '1';
-            document.getElementById('day').value = '15';
-            document.getElementById('hour').value = '12';
-            document.getElementById('minute').value = '0';
-            document.getElementById('second').value = '0';
+            const now = new Date();
+            const day = String(now.getDate()).padStart(2, '0');
+            const month = String(now.getMonth() + 1).padStart(2, '0');
+            const year = now.getFullYear();
+            
+            document.getElementById('date').value = `${day}/${month}/${year}`;
+            document.getElementById('time').value = '12:00:00';
             document.getElementById('lat').value = '28.6139';
             document.getElementById('lon').value = '77.2090';
-            document.getElementById('house_system').value = 'placidus';
+            document.getElementById('ayanamsha').value = 'jn_bhasin';
+            document.getElementById('house_system').value = 'equal';
         }
 
-        // Set current date as default
-        const now = new Date();
-        document.getElementById('year').value = now.getFullYear();
-        document.getElementById('month').value = now.getMonth() + 1;
-        document.getElementById('day').value = now.getDate();
+        // Set current date and time as default on page load
+        window.addEventListener('DOMContentLoaded', function() {
+            const now = new Date();
+            const day = String(now.getDate()).padStart(2, '0');
+            const month = String(now.getMonth() + 1).padStart(2, '0');
+            const year = now.getFullYear();
+            const hour = String(now.getHours()).padStart(2, '0');
+            const minute = String(now.getMinutes()).padStart(2, '0');
+            const second = String(now.getSeconds()).padStart(2, '0');
+            
+            document.getElementById('date').value = `${day}/${month}/${year}`;
+            document.getElementById('time').value = `${hour}:${minute}:${second}`;
+        });
     </script>
 </body>
 </html>
