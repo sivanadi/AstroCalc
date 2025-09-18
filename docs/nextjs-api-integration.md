@@ -68,6 +68,7 @@ Fetch all available options dynamically:
 ```typescript
 const response = await fetch(`${API_BASE_URL}/ayanamsha-options`);
 const { options } = await response.json();
+// Returns: { options: { "lahiri": { id: 1, name: "N.C. Lahiri" }, ... } }
 ```
 
 ## House Systems
@@ -97,7 +98,7 @@ const PLANETS = {
   'Venus': 'Venus',
   'Saturn': 'Saturn',
   'Rahu': 'Rahu (North Node)',
-  'Ketu': 'Ketu (South Node)' // Calculated as opposite of Rahu
+  'Ketu': 'Ketu (South Node)' // Auto-calculated as opposite of Rahu
 };
 ```
 
@@ -121,8 +122,8 @@ const response = await fetch(`${API_BASE_URL}/chart?` + new URLSearchParams({
   house_system: 'placidus'
 }), {
   headers: {
-    'Authorization': `Bearer ${API_KEY}`, // If using API key auth
-    'Origin': 'https://yourdomain.com' // If using domain auth
+    'Authorization': `Bearer ${API_KEY}` // If using API key auth
+    // Domain auth is handled automatically by the server based on request origin
   }
 });
 ```
@@ -178,7 +179,7 @@ Retrieve available ayanamsha systems:
 ```typescript
 const response = await fetch(`${API_BASE_URL}/ayanamsha-options`);
 const data = await response.json();
-// Returns: { options: { "lahiri": "Lahiri", "raman": "Raman", ... } }
+// Returns: { options: { "lahiri": { id: 1, name: "N.C. Lahiri" }, ... } }
 ```
 
 #### GET `/security-status`
@@ -186,7 +187,15 @@ Get API security configuration:
 ```typescript
 const response = await fetch(`${API_BASE_URL}/security-status`);
 const data = await response.json();
-// Returns security status, session info, and configuration
+// Returns: { status: "secure", environment_auth: boolean, active_sessions: number, ... }
+```
+
+#### GET `/health`
+API health check:
+```typescript
+const response = await fetch(`${API_BASE_URL}/health`);
+const data = await response.json();
+// Returns: { status: "healthy", ephe_path: "/path/to/ephemeris" }
 ```
 
 ## Data Models & Types
@@ -213,50 +222,38 @@ interface ChartRequest {
   transit_house_system?: string; // Separate house system for transit
 }
 
-// Chart Response
+// Chart Response (Actual structure from API)
 interface ChartResponse {
-  natal: {
-    planets: {
-      [planetName: string]: {
-        longitude: number;
-        sign: string;
-        degree: number;
-        minute: number;
-        second: number;
-      }
-    };
-    houses: {
-      [houseNumber: string]: {
-        sign: string;
-        degree: number;
-        minute: number;
-        second: number;
-      }
-    };
-    ascendant: {
-      longitude: number;
-      sign: string;
-      degree: number;
-      minute: number;
-      second: number;
-    };
+  other_details: {
+    natal_date_formatted: string;
+    transit_date_formatted: string;
+    natal_ayanamsha_name: string;
+    transit_ayanamsha_name: string;
+    ayanamsha_value_natal: number;
+    ayanamsha_value_transit: number;
+    natal_house_system_used: string;
+    transit_house_system_used: string;
+    timezone_used: string;
+    natal_input_time_ut: string;
+    transit_input_time_ut: string;
   };
-  transit: {
-    // Same structure as natal
+  natal_planets: {
+    [planetName: string]: number; // Longitude in degrees (e.g., "Sun": 54.12)
   };
-  metadata: {
-    birth_time: string;
-    timezone: string;
-    ayanamsha: string;
-    house_system: string;
-    julian_day: number;
+  natal_house_cusps: {
+    [houseName: string]: number; // House cusp in degrees (e.g., "House 1": 123.45)
+  };
+  transit_planets: {
+    [planetName: string]: number; // Current planetary positions
+  };
+  transit_house_cusps: {
+    [houseName: string]: number;
   };
 }
 
-// Error Response
+// Error Response (FastAPI standard format)
 interface ApiError {
-  detail: string;
-  status_code?: number;
+  detail: string; // Error message
 }
 
 // Admin Models (for admin panel integration)
@@ -265,16 +262,21 @@ interface AdminLogin {
   password: string;
 }
 
-interface APIKeyRequest {
+// For creating API keys
+interface CreateAPIKeyRequest {
   name: string;
-  description?: string;
-  per_minute_limit?: number;
-  per_day_limit?: number;
-  per_month_limit?: number;
+  description?: string; // Default: ''
+  per_minute_limit?: number; // Default: 60
+  per_day_limit?: number; // Default: 1000
+  per_month_limit?: number; // Default: 30000
 }
 
-interface DomainRequest {
+// For creating domains
+interface CreateDomainRequest {
   domain: string;
+  per_minute_limit?: number; // Default: 10
+  per_day_limit?: number; // Default: 100
+  per_month_limit?: number; // Default: 3000
 }
 ```
 
@@ -569,26 +571,33 @@ export default function ChartCalculator() {
             <div>
               <h4 className="font-medium mb-2">Natal Planets</h4>
               <div className="space-y-2">
-                {Object.entries(chartData.natal.planets).map(([planet, data]) => (
+                {Object.entries(chartData.natal_planets).map(([planet, longitude]) => (
                   <div key={planet} className="flex justify-between">
                     <span className="capitalize">{planet}:</span>
-                    <span>{data.sign} {data.degree}°{data.minute}'</span>
+                    <span>{longitude.toFixed(2)}°</span>
                   </div>
                 ))}
               </div>
             </div>
             
             <div>
-              <h4 className="font-medium mb-2">Houses</h4>
+              <h4 className="font-medium mb-2">House Cusps</h4>
               <div className="space-y-2">
-                {Object.entries(chartData.natal.houses).map(([house, data]) => (
+                {Object.entries(chartData.natal_house_cusps).map(([house, cusp]) => (
                   <div key={house} className="flex justify-between">
-                    <span>House {house}:</span>
-                    <span>{data.sign} {data.degree}°{data.minute}'</span>
+                    <span>{house}:</span>
+                    <span>{cusp.toFixed(2)}°</span>
                   </div>
                 ))}
               </div>
             </div>
+          </div>
+          
+          <div className="mt-4 p-4 bg-gray-100 rounded">
+            <h4 className="font-medium mb-2">Chart Details</h4>
+            <p>Ayanamsha: {chartData.other_details.natal_ayanamsha_name}</p>
+            <p>House System: {chartData.other_details.natal_house_system_used}</p>
+            <p>Date: {chartData.other_details.natal_date_formatted}</p>
           </div>
         </div>
       )}
