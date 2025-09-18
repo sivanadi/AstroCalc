@@ -462,7 +462,7 @@ def convert_timezone_to_ut(year, month, day, hour, minute, second, timezone_str)
         tz = pytz.timezone(timezone_str)
         local_dt = datetime(year, month, day, int(hour), int(minute), int(second))
         local_dt = tz.localize(local_dt)
-        utc_dt = local_dt.astimezone(pytz.UTC)
+        utc_dt = local_dt.astimezone(pytz.utc)
         
         return utc_dt.hour + utc_dt.minute/60 + utc_dt.second/3600
     except:
@@ -487,7 +487,7 @@ def convert_julian_to_date(julian_day_ut, timezone_str='UTC'):
         if timezone_str != 'UTC':
             try:
                 tz = pytz.timezone(timezone_str)
-                utc_dt = pytz.UTC.localize(utc_dt)
+                utc_dt = pytz.utc.localize(utc_dt)
                 local_dt = utc_dt.astimezone(tz)
             except:
                 local_dt = utc_dt
@@ -2605,7 +2605,7 @@ async def build_natal_transit_response(
         
         # Get current date and time for transit chart in user's timezone
         user_tz = pytz.timezone(tz)
-        now_utc = datetime.now(pytz.UTC)
+        now_utc = datetime.now(pytz.utc)
         now_local = now_utc.astimezone(user_tz)
         
         # Calculate transit chart with transit-specific ayanamsha and house system
