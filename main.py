@@ -873,6 +873,21 @@ def add_database_indexes():
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_api_keys_active_created ON api_keys(is_active, created_at)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_domains_active_created ON authorized_domains(is_active, created_at)')
         
+        # Usage tracking table indexes for optimal rate limiting performance
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_usage_minute_lookup ON usage_minute(identifier, identifier_type, minute_key)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_usage_day_lookup ON usage_day(identifier, identifier_type, day_key)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_usage_month_lookup ON usage_month(identifier, identifier_type, month_key)')
+        
+        # Indexes for cleanup/archiving queries (created_at for old data removal)
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_usage_minute_created_at ON usage_minute(created_at)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_usage_day_created_at ON usage_day(created_at)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_usage_month_created_at ON usage_month(created_at)')
+        
+        # Indexes for diagnostic table performance
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_api_diagnostics_ts ON api_diagnostics(ts)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_api_diagnostics_path ON api_diagnostics(path)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_api_diagnostics_request_id ON api_diagnostics(request_id)')
+        
         conn.commit()
         conn.close()
         print("Database performance indexes added successfully")
