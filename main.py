@@ -737,7 +737,7 @@ def init_database():
         )
     ''')
     
-    # Create usage tracking tables
+    # Create usage tracking tables with proper unique constraints
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS usage_minute (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -846,6 +846,11 @@ def add_database_indexes():
     cursor = conn.cursor()
     
     try:
+        # First, remove redundant indexes to optimize performance
+        cursor.execute('DROP INDEX IF EXISTS idx_usage_minute_identifier')
+        cursor.execute('DROP INDEX IF EXISTS idx_usage_day_identifier') 
+        cursor.execute('DROP INDEX IF EXISTS idx_usage_month_identifier')
+        
         # Additional indexes for improved v1 admin query performance
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_api_keys_is_active ON api_keys(is_active)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_api_keys_created_at ON api_keys(created_at)')
@@ -866,7 +871,7 @@ def add_database_indexes():
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_api_keys_active_created ON api_keys(is_active, created_at)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_domains_active_created ON authorized_domains(is_active, created_at)')
         
-        # Usage tracking table indexes for optimal rate limiting performance
+        # Usage tracking table indexes for optimal rate limiting performance (these cover the redundant ones)
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_usage_minute_lookup ON usage_minute(identifier, identifier_type, minute_key)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_usage_day_lookup ON usage_day(identifier, identifier_type, day_key)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_usage_month_lookup ON usage_month(identifier, identifier_type, month_key)')
@@ -883,13 +888,13 @@ def add_database_indexes():
         
         conn.commit()
         conn.close()
-        print("Database performance indexes added successfully")
+        print("Database performance indexes optimized successfully")
         return True
         
     except Exception as e:
         conn.rollback()
         conn.close()
-        print(f"Error adding indexes: {e}")
+        print(f"Error optimizing indexes: {e}")
         return False
 
 def create_admin_if_needed():
