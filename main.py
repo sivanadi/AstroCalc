@@ -2652,6 +2652,12 @@ async def calculate_chart_post(
     transit_ayan = chart_data.transit_ayanamsha if chart_data.transit_ayanamsha else chart_data.ayanamsha
     transit_house = chart_data.transit_house_system if chart_data.transit_house_system else chart_data.house_system
     
+    # Type assertion: model validator ensures these are not None
+    assert chart_data.year is not None
+    assert chart_data.month is not None
+    assert chart_data.day is not None
+    assert chart_data.hour is not None
+    
     result = await build_natal_transit_response(
         chart_data.year, chart_data.month, chart_data.day, 
         chart_data.hour, chart_data.minute, chart_data.second,
