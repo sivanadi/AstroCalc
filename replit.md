@@ -10,6 +10,12 @@ Preferred communication style: Simple, everyday language.
 
 ## Recent Changes
 
+**September 19, 2025 - Fixed critical timezone bug in API enforcement:**
+- Fixed timezone inconsistency causing API enforcement bypass to not automatically re-enable after expiration
+- Updated bypass system to use UTC time consistently for both setting and checking expiration times
+- Fixed timezone handling in is_bypass_active function and diagnostic toggle system
+- API enforcement now properly re-enables automatically when time-based bypass expires
+
 **September 19, 2025 - Fixed frontend display bug:**
 - Fixed JavaScript issue where Ayanamsha and House System fields showed "undefined" 
 - Updated frontend to use correct API field names (natal_ayanamsha_name, transit_ayanamsha_name, natal_house_system_used, transit_house_system_used)

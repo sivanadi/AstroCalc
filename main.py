@@ -1259,7 +1259,15 @@ def is_bypass_active(request) -> bool:
     if expires_at_str:
         try:
             expires_at = datetime.fromisoformat(expires_at_str)
-            if datetime.now() > expires_at:
+            # Ensure we use UTC for consistent time comparison
+            current_time = datetime.utcnow()
+            # If stored time is naive, treat it as UTC
+            if expires_at.tzinfo is None:
+                expires_at_utc = expires_at
+            else:
+                expires_at_utc = expires_at.astimezone(pytz.utc).replace(tzinfo=None)
+            
+            if current_time > expires_at_utc:
                 # Bypass has expired, disable it
                 update_setting('diag_bypass_enabled', 'false')
                 update_setting('diag_bypass_expires_at', '')
@@ -3309,7 +3317,8 @@ async def toggle_api_key_enforcement(
         if not toggle_request.enabled:
             # At this point duration_minutes is guaranteed to be set due to validation above
             duration = toggle_request.duration_minutes or 30  # Fallback to 30 minutes
-            expires_at = datetime.now() + timedelta(minutes=duration)
+            # Use UTC time for consistent timezone handling
+            expires_at = datetime.utcnow() + timedelta(minutes=duration)
             update_setting('diag_bypass_enabled', 'true')
             update_setting('diag_bypass_expires_at', expires_at.isoformat())
             # Require at least one IP for bypass (empty means no access allowed)
@@ -3394,7 +3403,14 @@ async def run_diagnostic_test(
                 if expires_at:
                     try:
                         expire_time = datetime.fromisoformat(expires_at)
-                        if datetime.now() > expire_time:
+                        current_time = datetime.utcnow()
+                        # Handle timezone consistently
+                        if expire_time.tzinfo is None:
+                            expire_time_utc = expire_time
+                        else:
+                            expire_time_utc = expire_time.astimezone(pytz.utc).replace(tzinfo=None)
+                        
+                        if current_time > expire_time_utc:
                             results.append({
                                 "test": "Bypass Expiry",
                                 "result": "EXPIRED",
