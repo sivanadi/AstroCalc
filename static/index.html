@@ -582,7 +582,7 @@
                     </div>
                     <div class="detail-item">
                         <div class="detail-label">Ayanamsha</div>
-                        <div class="detail-value">${data.other_details.ayanamsha_name}</div>
+                        <div class="detail-value">${data.other_details.natal_ayanamsha_name}</div>
                     </div>
                     <div class="detail-item">
                         <div class="detail-label">Ayanamsha Value</div>
@@ -590,7 +590,7 @@
                     </div>
                     <div class="detail-item">
                         <div class="detail-label">House System</div>
-                        <div class="detail-value">${data.other_details.house_system_used}</div>
+                        <div class="detail-value">${data.other_details.natal_house_system_used}</div>
                     </div>
                     <div class="detail-item">
                         <div class="detail-label">Timezone</div>
@@ -613,7 +613,7 @@
                     </div>
                     <div class="detail-item">
                         <div class="detail-label">Ayanamsha</div>
-                        <div class="detail-value">${data.other_details.ayanamsha_name}</div>
+                        <div class="detail-value">${data.other_details.transit_ayanamsha_name}</div>
                     </div>
                     <div class="detail-item">
                         <div class="detail-label">Ayanamsha Value</div>
@@ -621,7 +621,7 @@
                     </div>
                     <div class="detail-item">
                         <div class="detail-label">House System</div>
-                        <div class="detail-value">${data.other_details.house_system_used}</div>
+                        <div class="detail-value">${data.other_details.transit_house_system_used}</div>
                     </div>
                     <div class="detail-item">
                         <div class="detail-label">Timezone</div>
@@ -705,7 +705,7 @@
             
             const info = `
 Natal Other Details:
-Date: ${currentResults.other_details.natal_date_formatted} | Ayanamsha: ${currentResults.other_details.ayanamsha_name} | Ayanamsha Value: ${currentResults.other_details.ayanamsha_value_natal}° | House System: ${currentResults.other_details.house_system_used} | Timezone: ${currentResults.other_details.timezone_used} | Time (UT): ${currentResults.other_details.natal_input_time_ut}
+Date: ${currentResults.other_details.natal_date_formatted} | Ayanamsha: ${currentResults.other_details.natal_ayanamsha_name} | Ayanamsha Value: ${currentResults.other_details.ayanamsha_value_natal}° | House System: ${currentResults.other_details.natal_house_system_used} | Timezone: ${currentResults.other_details.timezone_used} | Time (UT): ${currentResults.other_details.natal_input_time_ut}
             `.trim();
             
             copyToClipboard(info);
@@ -716,7 +716,7 @@ Date: ${currentResults.other_details.natal_date_formatted} | Ayanamsha: ${curren
             
             const info = `
 Transit Other Details:
-Date: ${currentResults.other_details.transit_date_formatted} | Ayanamsha: ${currentResults.other_details.ayanamsha_name} | Ayanamsha Value: ${currentResults.other_details.ayanamsha_value_transit}° | House System: ${currentResults.other_details.house_system_used} | Timezone: ${currentResults.other_details.timezone_used} | Time (UT): ${currentResults.other_details.transit_input_time_ut}
+Date: ${currentResults.other_details.transit_date_formatted} | Ayanamsha: ${currentResults.other_details.transit_ayanamsha_name} | Ayanamsha Value: ${currentResults.other_details.ayanamsha_value_transit}° | House System: ${currentResults.other_details.transit_house_system_used} | Timezone: ${currentResults.other_details.timezone_used} | Time (UT): ${currentResults.other_details.transit_input_time_ut}
             `.trim();
             
             copyToClipboard(info);

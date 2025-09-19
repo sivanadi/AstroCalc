@@ -10,6 +10,11 @@ Preferred communication style: Simple, everyday language.
 
 ## Recent Changes
 
+**September 19, 2025 - Fixed frontend display bug:**
+- Fixed JavaScript issue where Ayanamsha and House System fields showed "undefined" 
+- Updated frontend to use correct API field names (natal_ayanamsha_name, transit_ayanamsha_name, natal_house_system_used, transit_house_system_used)
+- Verified all functionality is working correctly in Replit environment
+
 **September 18, 2025 - Successfully imported, configured, and enhanced with multi-cloud deployment:**
 - Installed all Python dependencies using uv package manager
 - Configured FastAPI server workflow to run on port 5000 with proper host configuration
