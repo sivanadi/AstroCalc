@@ -21,13 +21,6 @@ import threading
 from contextlib import contextmanager
 from functools import lru_cache
 
-# Cache for expensive calculations with LRU caching
-@lru_cache(maxsize=1000)
-def calculate_planetary_positions_cached(year: int, month: int, day: int, hour: int, minute: int, second: int, lat: float, lon: float, ayanamsha: str, house_system: str):
-    """Cached version of planetary calculations"""
-    # This will be called by the main calculation function
-    return None  # Placeholder for actual implementation
-
 # Database connection pool for performance optimization
 class DatabaseManager:
     _instance = None
