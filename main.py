@@ -3,6 +3,7 @@ from fastapi.responses import JSONResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from pydantic import BaseModel, Field, validator, model_validator
 from enum import Enum
 import swisseph as swe
@@ -16,6 +17,55 @@ import hashlib
 import bcrypt
 import sqlite3
 from timezonefinder import TimezoneFinder
+import threading
+from contextlib import contextmanager
+from functools import lru_cache
+
+# Cache for expensive calculations with LRU caching
+@lru_cache(maxsize=1000)
+def calculate_planetary_positions_cached(year: int, month: int, day: int, hour: int, minute: int, second: int, lat: float, lon: float, ayanamsha: str, house_system: str):
+    """Cached version of planetary calculations"""
+    # This will be called by the main calculation function
+    return None  # Placeholder for actual implementation
+
+# Database connection pool for performance optimization
+class DatabaseManager:
+    _instance = None
+    _lock = threading.Lock()
+    
+    def __new__(cls):
+        if cls._instance is None:
+            with cls._lock:
+                if cls._instance is None:
+                    cls._instance = super().__new__(cls)
+                    cls._instance._initialized = False
+        return cls._instance
+    
+    def __init__(self):
+        if not self._initialized:
+            self.db_path = 'astrology_db.sqlite3'
+            self._local = threading.local()
+            self._initialized = True
+    
+    @contextmanager
+    def get_connection(self):
+        """Get a database connection with automatic management"""
+        if not hasattr(self._local, 'connection') or self._local.connection is None:
+            self._local.connection = sqlite3.connect(self.db_path)
+            # Enable performance optimizations
+            self._local.connection.execute('PRAGMA journal_mode=WAL')
+            self._local.connection.execute('PRAGMA synchronous=NORMAL')
+            self._local.connection.execute('PRAGMA cache_size=10000')
+            self._local.connection.execute('PRAGMA temp_store=MEMORY')
+        
+        try:
+            yield self._local.connection
+        except Exception as e:
+            self._local.connection.rollback()
+            raise e
+
+# Global database manager instance
+db_manager = DatabaseManager()
 
 app = FastAPI(
     title="Vedic Astrology Calculator", 
@@ -24,6 +74,9 @@ app = FastAPI(
     redoc_url=None if os.getenv('ENVIRONMENT') == 'production' else '/redoc',
     docs_url=None if os.getenv('ENVIRONMENT') == 'production' else '/docs'
 )
+
+# Add GZip compression middleware for better performance
+app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 @app.on_event("startup")
 async def startup_event():
@@ -46,6 +99,14 @@ async def startup_event():
     add_database_indexes()
     print("Database initialization completed")
 
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Clean up resources on shutdown"""
+    # Close database connections
+    if hasattr(db_manager._local, 'connection') and db_manager._local.connection:
+        db_manager._local.connection.close()
+        print("Database connections closed")
+
 # Logging filter middleware to reduce health check spam
 @app.middleware("http") 
 async def logging_filter_middleware(request: Request, call_next):
@@ -66,7 +127,7 @@ async def logging_filter_middleware(request: Request, call_next):
     else:
         return await call_next(request)
 
-# Security headers middleware
+# Security headers and performance caching middleware
 @app.middleware("http")
 async def add_security_headers(request: Request, call_next):
     response = await call_next(request)
@@ -82,6 +143,17 @@ async def add_security_headers(request: Request, call_next):
     response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
     response.headers["Content-Security-Policy"] = "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'"
+    
+    # Performance: Add caching headers for static assets
+    if request.url.path.startswith('/static/'):
+        # Cache static files for 1 hour - let StaticFiles handle ETags naturally
+        response.headers["Cache-Control"] = "public, max-age=3600"
+    elif request.url.path == '/chart' and request.method == 'GET':
+        # Cache GET chart responses for 5 minutes to reduce computation
+        response.headers["Cache-Control"] = "public, max-age=300"
+    else:
+        # Default: no cache for dynamic content
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
     
     # Remove server header for security
     if "server" in response.headers:
@@ -109,9 +181,11 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 
 security = HTTPBearer(auto_error=False)
 
-# Set the ephemeris path
+# Set the ephemeris path with caching for performance
 ephe_path = os.path.join(os.getcwd(), "ephe")
-swe.set_ephe_path(ephe_path)
+if not hasattr(swe, '_ephe_path_set') or swe._ephe_path_set != ephe_path:
+    swe.set_ephe_path(ephe_path)
+    swe._ephe_path_set = ephe_path
 
 # Ayanamsha options
 AYANAMSHA_OPTIONS = {
@@ -1163,51 +1237,48 @@ def check_and_increment_usage(identifier: str, identifier_type: str, per_minute_
 
 def get_api_key_limits(key_hash: str):
     """Get API key limits from database"""
-    conn = sqlite3.connect('astrology_db.sqlite3')
-    cursor = conn.cursor()
-    cursor.execute('''
-        SELECT per_minute_limit, per_day_limit, per_month_limit, is_active 
-        FROM api_keys WHERE key_hash = ?
-    ''', (key_hash,))
-    result = cursor.fetchone()
-    conn.close()
-    if result:
-        return {
-            'per_minute_limit': result[0],
-            'per_day_limit': result[1], 
-            'per_month_limit': result[2],
-            'is_active': bool(result[3])
-        }
-    return None
+    with db_manager.get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT per_minute_limit, per_day_limit, per_month_limit, is_active 
+            FROM api_keys WHERE key_hash = ?
+        ''', (key_hash,))
+        result = cursor.fetchone()
+        if result:
+            return {
+                'per_minute_limit': result[0],
+                'per_day_limit': result[1], 
+                'per_month_limit': result[2],
+                'is_active': bool(result[3])
+            }
+        return None
 
 def get_domain_limits(domain: str):
     """Get domain limits from database"""
-    conn = sqlite3.connect('astrology_db.sqlite3')
-    cursor = conn.cursor()
-    cursor.execute('''
-        SELECT per_minute_limit, per_day_limit, per_month_limit, is_active 
-        FROM authorized_domains WHERE domain = ?
-    ''', (domain,))
-    result = cursor.fetchone()
-    conn.close()
-    if result:
-        return {
-            'per_minute_limit': result[0],
-            'per_day_limit': result[1],
-            'per_month_limit': result[2], 
-            'is_active': bool(result[3])
-        }
-    return None
+    with db_manager.get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT per_minute_limit, per_day_limit, per_month_limit, is_active 
+            FROM authorized_domains WHERE domain = ?
+        ''', (domain,))
+        result = cursor.fetchone()
+        if result:
+            return {
+                'per_minute_limit': result[0],
+                'per_day_limit': result[1],
+                'per_month_limit': result[2], 
+                'is_active': bool(result[3])
+            }
+        return None
 
 # Diagnostic and Settings helper functions
 def get_setting(key: str, default: str = '') -> str:
     """Get a setting value from the database"""
-    conn = sqlite3.connect('astrology_db.sqlite3')
-    cursor = conn.cursor()
-    cursor.execute('SELECT value FROM app_settings WHERE key = ?', (key,))
-    result = cursor.fetchone()
-    conn.close()
-    return result[0] if result else default
+    with db_manager.get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('SELECT value FROM app_settings WHERE key = ?', (key,))
+        result = cursor.fetchone()
+        return result[0] if result else default
 
 def get_setting_bool(key: str, default: bool = False) -> bool:
     """Get a boolean setting value from the database"""
@@ -1217,15 +1288,14 @@ def get_setting_bool(key: str, default: bool = False) -> bool:
 def update_setting(key: str, value: str) -> bool:
     """Update a setting value in the database"""
     try:
-        conn = sqlite3.connect('astrology_db.sqlite3')
-        cursor = conn.cursor()
-        cursor.execute('''
-            INSERT OR REPLACE INTO app_settings (key, value, updated_at) 
-            VALUES (?, ?, CURRENT_TIMESTAMP)
-        ''', (key, value))
-        conn.commit()
-        conn.close()
-        return True
+        with db_manager.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                INSERT OR REPLACE INTO app_settings (key, value, updated_at) 
+                VALUES (?, ?, CURRENT_TIMESTAMP)
+            ''', (key, value))
+            conn.commit()
+            return True
     except Exception:
         return False
 
